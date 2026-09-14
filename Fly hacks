@@ -1,0 +1,3032 @@
+--[[ FlyHacks ]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local StatsService = game:GetService("Stats")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local SESSION_START = tick()
+
+-- ============ THEMES ============
+local THEME_PRESETS = {
+    black = {
+        label="Black", swatch=Color3.fromRGB(20,20,24),
+        bg=Color3.fromRGB(12,12,14), surface=Color3.fromRGB(18,18,20),
+        surface2=Color3.fromRGB(26,26,29), surface3=Color3.fromRGB(36,36,40),
+        border=Color3.fromRGB(48,48,52), text=Color3.fromRGB(235,235,238),
+        textDim=Color3.fromRGB(155,155,160), textMute=Color3.fromRGB(100,100,108),
+        accent=Color3.fromRGB(96,165,250),
+    },
+    ocean = {
+        label="Ocean", swatch=Color3.fromRGB(18,42,58),
+        bg=Color3.fromRGB(8,20,28), surface=Color3.fromRGB(12,30,42),
+        surface2=Color3.fromRGB(18,42,58), surface3=Color3.fromRGB(28,56,78),
+        border=Color3.fromRGB(42,78,100), text=Color3.fromRGB(220,240,250),
+        textDim=Color3.fromRGB(130,175,200), textMute=Color3.fromRGB(80,118,145),
+        accent=Color3.fromRGB(80,200,220),
+    },
+    lightblue = {
+        label="Light Blue", swatch=Color3.fromRGB(210,232,250),
+        bg=Color3.fromRGB(210,232,250), surface=Color3.fromRGB(196,223,246),
+        surface2=Color3.fromRGB(228,241,253), surface3=Color3.fromRGB(178,213,242),
+        border=Color3.fromRGB(144,187,224), text=Color3.fromRGB(16,42,78),
+        textDim=Color3.fromRGB(58,100,148), textMute=Color3.fromRGB(110,145,184),
+        accent=Color3.fromRGB(37,99,235),
+    },
+    forest = {
+        label="Forest", swatch=Color3.fromRGB(26,44,32),
+        bg=Color3.fromRGB(12,22,16), surface=Color3.fromRGB(18,32,22),
+        surface2=Color3.fromRGB(26,44,32), surface3=Color3.fromRGB(38,62,46),
+        border=Color3.fromRGB(56,84,64), text=Color3.fromRGB(226,240,228),
+        textDim=Color3.fromRGB(150,180,152), textMute=Color3.fromRGB(96,128,98),
+        accent=Color3.fromRGB(120,210,140),
+    },
+    mango = {
+        label="Mango", swatch=Color3.fromRGB(255,195,80),
+        bg=Color3.fromRGB(255,195,80), surface=Color3.fromRGB(255,210,120),
+        surface2=Color3.fromRGB(255,225,150), surface3=Color3.fromRGB(255,240,180),
+        border=Color3.fromRGB(200,120,40), text=Color3.fromRGB(60,30,10),
+        textDim=Color3.fromRGB(120,60,20), textMute=Color3.fromRGB(160,90,40),
+        accent=Color3.fromRGB(255,100,0),
+        mango=true,
+    },
+}
+local THEME_ORDER = {"black","ocean","lightblue","forest","mango"}
+
+local Theme = {}
+for k,v in pairs(THEME_PRESETS.black) do
+    if k ~= "label" and k ~= "swatch" and k ~= "mango" then Theme[k] = v end
+end
+Theme.danger = Color3.fromRGB(248,113,113)
+Theme.warn = Color3.fromRGB(251,191,36)
+Theme.mango = false
+
+-- ============ SETTINGS ============
+local Settings = {
+    flying=false, flySpeed=70, maxSpeed=500, minSpeed=10,
+    toggleKey=Enum.KeyCode.E, uiKey=Enum.KeyCode.H,
+    uiScale=1.0, guiOpen=false,
+    notifications=true, spectateZoom=22, tracers=false,
+    searchText="", clockEnabled=false,
+    walkSpeed=16, walkSpeedEnabled=false, walkSpeedKey=Enum.KeyCode.V,
+    jumpPower=50, jumpPowerEnabled=false,
+    infiniteJump=false,
+    noclip=false, noclipKey=Enum.KeyCode.N,
+    potato=false, potatoKey=Enum.KeyCode.P,
+    infiniteZoom=false,
+    espScale=1.0, espNames=true,
+    clickTeleport=false,
+    clickTeleportInput=Enum.UserInputType.MouseButton1,
+    themeName="black",
+    fullbright=false,
+    pendingESPUserIds = {},
+}
+
+-- ============ DEFAULTS (for Reset) ============
+local DEFAULTS = {
+    flySpeed = 70,
+    toggleKey = Enum.KeyCode.E,
+    uiKey = Enum.KeyCode.H,
+    uiScale = 1.0,
+    notifications = true,
+    spectateZoom = 22,
+    tracers = false,
+    clockEnabled = false,
+    walkSpeed = 16,
+    walkSpeedEnabled = false,
+    walkSpeedKey = Enum.KeyCode.V,
+    jumpPower = 50,
+    jumpPowerEnabled = false,
+    infiniteJump = false,
+    noclip = false,
+    noclipKey = Enum.KeyCode.N,
+    potato = false,
+    potatoKey = Enum.KeyCode.P,
+    infiniteZoom = false,
+    espScale = 1.0,
+    espNames = true,
+    clickTeleport = false,
+    clickTeleportInput = Enum.UserInputType.MouseButton1,
+    themeName = "black",
+    fullbright = false,
+    freecamSpeed = 70,
+    freecamKeybind = Enum.KeyCode.Y,
+    espColorName = "red",
+}
+
+-- ============ STATE ============
+local bodyVelocity, bodyGyro, guiFrame, tracerContainer, header
+local FlySaved = { humanoid=nil, walkSpeed=16, jumpPower=50 }
+local Spectate = { active=false, target=nil, smoothPos=nil, smoothLook=nil }
+local Freecam = { active=false, speed=70, maxSpeed=500, minSpeed=10, keybind=Enum.KeyCode.Y, cframe=nil, yaw=0, pitch=0, savedWalkSpeed=16, savedJumpPower=50, controls=nil }
+local ESP = { enabled=false, selected={}, entries={}, addedConn=nil, removedConn=nil, colorName="red" }
+local COLOR_PRESETS = {
+    red    = { fill=Color3.fromRGB(255,60,60),  outline=Color3.fromRGB(255,0,0),    dist=Color3.fromRGB(255,200,200) },
+    green  = { fill=Color3.fromRGB(60,255,100), outline=Color3.fromRGB(60,255,100), dist=Color3.fromRGB(180,255,200) },
+    blue   = { fill=Color3.fromRGB(60,150,255), outline=Color3.fromRGB(40,120,255), dist=Color3.fromRGB(180,215,255) },
+    yellow = { fill=Color3.fromRGB(255,230,40), outline=Color3.fromRGB(255,230,40), dist=Color3.fromRGB(255,240,180) },
+    purple = { fill=Color3.fromRGB(190,100,255),outline=Color3.fromRGB(160,40,255), dist=Color3.fromRGB(230,200,255) },
+    white  = { fill=Color3.fromRGB(255,255,255),outline=Color3.fromRGB(255,255,255), dist=Color3.fromRGB(235,235,235) },
+}
+local ESPColor = { fill=COLOR_PRESETS.red.fill, outline=COLOR_PRESETS.red.outline, dist=COLOR_PRESETS.red.dist }
+local Fullbright = { original=nil }
+local NoclipState = { active=false, savedCollide={}, savedQuery={}, savedTouch={}, charConn=nil, respawnConn=nil }
+local InfiniteZoom = { originalMax=nil, originalMin=nil, conn=nil }
+
+-- ============ SAVE/LOAD STATE ============
+local SAVE_FILE = "FlyHacks_Settings.json"
+local Save = { status = "No save file", lastSaveTick = 0 }
+
+-- ============ POTATO ============
+local POTATO_TAG = "FlyHacksPotato"
+local POTATO_WATCH = "FlyHacksPotatoWatch"
+local Potato = {
+    active = false,
+    savedMaterial = {},
+    savedTextureID = {},
+    savedSurface = {},
+    savedChild = {},
+    savedLighting = nil,
+    savedPostFx = {},
+    descendantConn = nil,
+    sweepAlive = false,
+}
+
+local ui = {}
+local currentTab = "FLY"
+local PAD = 26
+local rebindingAny = false
+local activeSlider = nil
+
+-- ============ HELPERS ============
+local function isTyping() return UserInputService:GetFocusedTextBox() ~= nil end
+local function formatUptime(s)
+    s = math.max(0, math.floor(s))
+    local h, m, sec = math.floor(s/3600), math.floor((s%3600)/60), s%60
+    if h>0 then return string.format("%dh %02dm %02ds",h,m,sec)
+    elseif m>0 then return string.format("%dm %02ds",m,sec)
+    else return string.format("%ds",sec) end
+end
+local function format12h()
+    local t = os.date("*t"); local h = t.hour
+    local ap = (h>=12) and "PM" or "AM"; h = h % 12; if h==0 then h=12 end
+    return string.format("%d:%02d:%02d %s", h, t.min, t.sec, ap)
+end
+local function estimateRegion(p)
+    if p<=0 then return "—" end
+    if p<50 then return "Local" elseif p<100 then return "Nearby"
+    elseif p<180 then return "Regional" elseif p<300 then return "Distant"
+    else return "Very Far" end
+end
+local function getPingMs()
+    local ok, v = pcall(function() return StatsService.Network.ServerStatsItem["Data Ping"]:GetValue() end)
+    if ok and type(v)=="number" and v>0 then return v end
+    local f = player:GetNetworkPing()*1000
+    if f and f>0 then return f end
+    return 0
+end
+local function clickTeleportInputToString(inp)
+    if not inp then return "?" end
+    local s = tostring(inp)
+    s = s:gsub("Enum%.UserInputType%.", "")
+    s = s:gsub("Enum%.KeyCode%.", "")
+    if s == "MouseButton1" then return "Left Click" end
+    if s == "MouseButton2" then return "Right Click" end
+    if s == "MouseButton3" then return "Middle Click" end
+    return s
+end
+local function isClickTeleportInput(input)
+    local stored = Settings.clickTeleportInput
+    if not stored then return false end
+    if typeof(stored) == "EnumItem" then
+        if stored.EnumType == Enum.KeyCode then return input.KeyCode == stored
+        elseif stored.EnumType == Enum.UserInputType then return input.UserInputType == stored end
+    end
+    return false
+end
+
+-- ============ ENUM SERIALIZATION ============
+local function enumToTable(e)
+    if typeof(e) ~= "EnumItem" then return e end
+    return { __enum = tostring(e.EnumType), Name = e.Name }
+end
+local function tableToEnum(t)
+    if typeof(t) == "EnumItem" then return t end
+    if type(t) ~= "table" or not t.__enum or not t.Name then return nil end
+    local ok, res = pcall(function() return Enum[t.__enum][t.Name] end)
+    if ok and res then return res end
+    return nil
+end
+local function hasFileIO()
+    return type(writefile) == "function" and type(readfile) == "function"
+       and type(isfile) == "function"
+end
+
+-- ============ SAVE / LOAD ============
+local function buildSaveData()
+    local data = {
+        version = 1,
+        flySpeed = Settings.flySpeed,
+        toggleKey = enumToTable(Settings.toggleKey),
+        uiKey = enumToTable(Settings.uiKey),
+        uiScale = Settings.uiScale,
+        notifications = Settings.notifications,
+        spectateZoom = Settings.spectateZoom,
+        tracers = Settings.tracers,
+        clockEnabled = Settings.clockEnabled,
+        walkSpeed = Settings.walkSpeed,
+        walkSpeedEnabled = Settings.walkSpeedEnabled,
+        walkSpeedKey = enumToTable(Settings.walkSpeedKey),
+        jumpPower = Settings.jumpPower,
+        jumpPowerEnabled = Settings.jumpPowerEnabled,
+        infiniteJump = Settings.infiniteJump,
+        noclipKey = enumToTable(Settings.noclipKey),
+        potatoKey = enumToTable(Settings.potatoKey),
+        infiniteZoom = Settings.infiniteZoom,
+        espScale = Settings.espScale,
+        espNames = Settings.espNames,
+        espColorName = ESP.colorName,
+        clickTeleport = Settings.clickTeleport,
+        clickTeleportInput = enumToTable(Settings.clickTeleportInput),
+        themeName = Settings.themeName,
+        fullbright = Settings.fullbright,
+        freecamSpeed = Freecam.speed,
+        freecamKeybind = enumToTable(Freecam.keybind),
+        espSelectedUserIds = {},
+    }
+    for plr, sel in pairs(ESP.selected) do
+        if sel and typeof(plr) == "Instance" and plr.UserId and plr.UserId > 0 then
+            table.insert(data.espSelectedUserIds, tostring(plr.UserId))
+        end
+    end
+    return data
+end
+
+local function applySaveData(data)
+    if type(data) ~= "table" then return false end
+    local function num(v, def, mn, mx)
+        if type(v) ~= "number" then return def end
+        if mn and v < mn then return mn end
+        if mx and v > mx then return mx end
+        return v
+    end
+    if type(data.flySpeed) == "number" then Settings.flySpeed = num(data.flySpeed, Settings.flySpeed, Settings.minSpeed, Settings.maxSpeed) end
+    local tk = tableToEnum(data.toggleKey); if tk then Settings.toggleKey = tk end
+    local uk = tableToEnum(data.uiKey); if uk then Settings.uiKey = uk end
+    if type(data.uiScale) == "number" then Settings.uiScale = num(data.uiScale, 1, 0.5, 3) end
+    if type(data.notifications) == "boolean" then Settings.notifications = data.notifications end
+    if type(data.spectateZoom) == "number" then Settings.spectateZoom = num(data.spectateZoom, 22, 1, 200) end
+    if type(data.tracers) == "boolean" then Settings.tracers = data.tracers end
+    if type(data.clockEnabled) == "boolean" then Settings.clockEnabled = data.clockEnabled end
+    if type(data.walkSpeed) == "number" then Settings.walkSpeed = num(data.walkSpeed, 16, 0, 1000) end
+    if type(data.walkSpeedEnabled) == "boolean" then Settings.walkSpeedEnabled = data.walkSpeedEnabled end
+    local wsk = tableToEnum(data.walkSpeedKey); if wsk then Settings.walkSpeedKey = wsk end
+    if type(data.jumpPower) == "number" then Settings.jumpPower = num(data.jumpPower, 50, 0, 1000) end
+    if type(data.jumpPowerEnabled) == "boolean" then Settings.jumpPowerEnabled = data.jumpPowerEnabled end
+    if type(data.infiniteJump) == "boolean" then Settings.infiniteJump = data.infiniteJump end
+    local nck = tableToEnum(data.noclipKey); if nck then Settings.noclipKey = nck end
+    local ptk = tableToEnum(data.potatoKey); if ptk then Settings.potatoKey = ptk end
+    if type(data.infiniteZoom) == "boolean" then Settings.infiniteZoom = data.infiniteZoom end
+    if type(data.espScale) == "number" then Settings.espScale = num(data.espScale, 1, 0.3, 3) end
+    if type(data.espNames) == "boolean" then Settings.espNames = data.espNames end
+    if type(data.espColorName) == "string" and COLOR_PRESETS[data.espColorName] then
+        ESP.colorName = data.espColorName
+        local p = COLOR_PRESETS[data.espColorName]
+        ESPColor.fill = p.fill; ESPColor.outline = p.outline; ESPColor.dist = p.dist
+    end
+    if type(data.clickTeleport) == "boolean" then Settings.clickTeleport = data.clickTeleport end
+    local cti = tableToEnum(data.clickTeleportInput)
+    if cti then Settings.clickTeleportInput = cti end
+    if type(data.themeName) == "string" and THEME_PRESETS[data.themeName] then
+        Settings.themeName = data.themeName
+    end
+    if type(data.fullbright) == "boolean" then Settings.fullbright = data.fullbright end
+    if type(data.freecamSpeed) == "number" then Freecam.speed = num(data.freecamSpeed, 70, Freecam.minSpeed, Freecam.maxSpeed) end
+    local fck = tableToEnum(data.freecamKeybind); if fck then Freecam.keybind = fck end
+    Settings.pendingESPUserIds = {}
+    if type(data.espSelectedUserIds) == "table" then
+        for _, uid in ipairs(data.espSelectedUserIds) do
+            if type(uid) == "string" then
+                Settings.pendingESPUserIds[uid] = true
+            end
+        end
+    end
+    return true
+end
+
+local function doSave()
+    if not hasFileIO() then
+        Save.status = "File API not available"
+        notify("File API not available", Theme.warn)
+        return false
+    end
+    local ok, encoded = pcall(function() return HttpService:JSONEncode(buildSaveData()) end)
+    if not ok or not encoded then
+        Save.status = "Encode failed"
+        notify("Save encode failed", Theme.danger)
+        return false
+    end
+    local ok2 = pcall(function() writefile(SAVE_FILE, encoded) end)
+    if not ok2 then
+        Save.status = "Write failed"
+        notify("Save write failed", Theme.danger)
+        return false
+    end
+    Save.lastSaveTick = tick()
+    Save.status = "Saved " .. os.date("%H:%M:%S")
+    notify("Settings saved", Theme.accent)
+    return true
+end
+
+local function doLoad(silent)
+    if not hasFileIO() then
+        Save.status = "File API unavailable"
+        return false
+    end
+    local ok, exists = pcall(function() return isfile(SAVE_FILE) end)
+    if not ok or not exists then
+        Save.status = "No save file"
+        if not silent then notify("No save file found", Theme.warn) end
+        return false
+    end
+    local ok2, raw = pcall(function() return readfile(SAVE_FILE) end)
+    if not ok2 or not raw then
+        Save.status = "Read failed"
+        return false
+    end
+    local ok3, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not ok3 or type(data) ~= "table" then
+        Save.status = "Corrupt save file"
+        return false
+    end
+    local ok4 = applySaveData(data)
+    if not ok4 then Save.status = "Invalid save data"; return false end
+    Save.status = "Loaded " .. os.date("%H:%M:%S")
+    if not silent then notify("Settings loaded", Theme.accent) end
+    return true
+end
+
+local function applyPendingESPSelections()
+    if not Settings.pendingESPUserIds then return end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player then
+            local uid = tostring(plr.UserId)
+            if Settings.pendingESPUserIds[uid] then
+                ESP.selected[plr] = true
+            end
+        end
+    end
+end
+
+-- ============ FORWARD DECLS ============
+local updateUI, updateTabIndicators, rebuildPlayerList, refreshSpectateUI, refreshRowCheckmark
+local stopSpectate, stopFreecam, switchTab, toggleESP
+local applyFullbright, applyWalkSpeed, applyJumpPower
+local setWalkSpeedEnabled, setJumpPowerEnabled, setNoclip, setPotato, setInfiniteZoom
+local applyEspScaleToEntry, applyEspNamesToEntry
+local doTeleportFromMouse
+local applyTheme, pulseButton, notify
+local createESPForPlayer, removeESPForPlayer, createPlayerRow
+local disableESP
+
+-- ============ THEME TAGGING ============
+local function tagBg(o,k) o:SetAttribute("Theme_Bg", k) end
+local function tagText(o,k) o:SetAttribute("Theme_Text", k) end
+local function tagStroke(s,k) s:SetAttribute("Theme_Stroke", k) end
+
+local function applyThemeToDescendants()
+    local sg = player.PlayerGui:FindFirstChild("FlyHacksUI"); if not sg then return end
+    for _, d in ipairs(sg:GetDescendants()) do
+        local bk = d:GetAttribute("Theme_Bg")
+        if bk and d:IsA("GuiObject") and Theme[bk] then d.BackgroundColor3 = Theme[bk] end
+        local tk = d:GetAttribute("Theme_Text")
+        if tk and (d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox")) and Theme[tk] then
+            d.TextColor3 = Theme[tk]
+        end
+        local pk = d:GetAttribute("Theme_Placeholder")
+        if pk and d:IsA("TextBox") and Theme[pk] then d.PlaceholderColor3 = Theme[pk] end
+        local sk = d:GetAttribute("Theme_Stroke")
+        if sk and d:IsA("UIStroke") and Theme[sk] then
+            if not d.Parent or not d.Parent:GetAttribute("ToggledOn") then
+                d.Color = Theme[sk]
+            end
+        end
+    end
+end
+
+-- ============ STATS LOOP ============
+local ServerStats = { frames=0, accumDt=0, smoothedFps=60, smoothedPing=0, lastUpdate=tick() }
+local lastClockSecond = -1
+
+RunService.RenderStepped:Connect(function(dt)
+    ServerStats.frames = ServerStats.frames + 1
+    ServerStats.accumDt = ServerStats.accumDt + dt
+    local now = tick()
+    if now - ServerStats.lastUpdate >= 0.5 then
+        local avg = ServerStats.frames / math.max(ServerStats.accumDt, 0.0001)
+        ServerStats.smoothedFps = ServerStats.smoothedFps*0.4 + avg*0.6
+        local p = getPingMs()
+        if p>0 then ServerStats.smoothedPing = ServerStats.smoothedPing*0.5 + p*0.5 end
+        if ui.serverFpsValue then ui.serverFpsValue.Text = math.floor(ServerStats.smoothedFps+0.5).." FPS" end
+        if ui.serverPingValue then ui.serverPingValue.Text = math.floor(ServerStats.smoothedPing+0.5).." ms" end
+        if ui.serverRegionValue then ui.serverRegionValue.Text = estimateRegion(ServerStats.smoothedPing) end
+        if ui.sessionTimeValue then ui.sessionTimeValue.Text = formatUptime(tick()-SESSION_START) end
+        ServerStats.frames = 0; ServerStats.accumDt = 0; ServerStats.lastUpdate = now
+    end
+    if ui.clockLabel and ui.clockFrame and ui.clockFrame.Visible then
+        local sec = os.time()
+        if sec ~= lastClockSecond then
+            lastClockSecond = sec
+            ui.clockLabel.Text = format12h()
+        end
+    end
+    if ui.posValue then
+        local c = player.Character
+        local r = c and c:FindFirstChild("HumanoidRootPart")
+        if r then
+            ui.posValue.Text = string.format("%d, %d, %d",
+                math.floor(r.Position.X), math.floor(r.Position.Y), math.floor(r.Position.Z))
+        end
+    end
+end)
+
+-- ============ MOVEMENT ============
+local function movementAllowed()
+    if Settings.flying then return false end
+    if Freecam.active then return false end
+    if Spectate.active then return false end
+    return true
+end
+function applyWalkSpeed()
+    if not Settings.walkSpeedEnabled then return end
+    if not movementAllowed() then return end
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid"); if not h then return end
+    if math.abs(h.WalkSpeed - Settings.walkSpeed) > 0.01 then h.WalkSpeed = Settings.walkSpeed end
+end
+function applyJumpPower()
+    if not Settings.jumpPowerEnabled then return end
+    if not movementAllowed() then return end
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid"); if not h then return end
+    pcall(function() if not h.UseJumpPower then h.UseJumpPower = true end end)
+    if math.abs(h.JumpPower - Settings.jumpPower) > 0.01 then h.JumpPower = Settings.jumpPower end
+end
+function setWalkSpeedEnabled(on)
+    Settings.walkSpeedEnabled = on
+    if on then applyWalkSpeed()
+    else
+        local c = player.Character
+        if c then
+            local h = c:FindFirstChildOfClass("Humanoid")
+            if h then h.WalkSpeed = 16 end
+        end
+    end
+    if updateUI then updateUI() end
+    if updateTabIndicators then updateTabIndicators() end
+end
+function setJumpPowerEnabled(on)
+    Settings.jumpPowerEnabled = on
+    if on then applyJumpPower()
+    else
+        local c = player.Character
+        if c then
+            local h = c:FindFirstChildOfClass("Humanoid")
+            if h then
+                pcall(function() h.UseJumpPower = true end)
+                h.JumpPower = 50
+            end
+        end
+    end
+    if updateUI then updateUI() end
+    if updateTabIndicators then updateTabIndicators() end
+end
+
+-- ============ NOCLIP ============
+local function noclipApplyToPart(part)
+    if not part or not part:IsA("BasePart") then return end
+    if NoclipState.savedCollide[part] == nil then NoclipState.savedCollide[part] = part.CanCollide end
+    if NoclipState.savedQuery[part] == nil then NoclipState.savedQuery[part] = part.CanQuery end
+    if NoclipState.savedTouch[part] == nil then NoclipState.savedTouch[part] = part.CanTouch end
+    if part.CanCollide then pcall(function() part.CanCollide = false end) end
+    if part.CanQuery then pcall(function() part.CanQuery = false end) end
+    if part.CanTouch then pcall(function() part.CanTouch = false end) end
+end
+local function noclipApplyToCharacter(c)
+    if not c then return end
+    for _, d in ipairs(c:GetDescendants()) do
+        if d:IsA("BasePart") then noclipApplyToPart(d) end
+    end
+end
+local function noclipHookCharacter(c)
+    if NoclipState.charConn then NoclipState.charConn:Disconnect(); NoclipState.charConn = nil end
+    if not c then return end
+    NoclipState.charConn = c.DescendantAdded:Connect(function(d)
+        if not Settings.noclip then return end
+        if d:IsA("BasePart") then noclipApplyToPart(d) end
+    end)
+end
+local function noclipEnable()
+    NoclipState.active = true
+    NoclipState.savedCollide = {}; NoclipState.savedQuery = {}; NoclipState.savedTouch = {}
+    local c = player.Character
+    if c then
+        noclipApplyToCharacter(c)
+        noclipHookCharacter(c)
+    end
+    if not NoclipState.respawnConn then
+        NoclipState.respawnConn = player.CharacterAdded:Connect(function(newChar)
+            if not Settings.noclip then return end
+            NoclipState.savedCollide = {}; NoclipState.savedQuery = {}; NoclipState.savedTouch = {}
+            newChar:WaitForChild("Humanoid", 5); task.wait(0.1)
+            noclipApplyToCharacter(newChar)
+            noclipHookCharacter(newChar)
+        end)
+    end
+end
+local function noclipDisable()
+    NoclipState.active = false
+    for p, o in pairs(NoclipState.savedCollide) do if p and p.Parent then pcall(function() p.CanCollide = o end) end end
+    for p, o in pairs(NoclipState.savedQuery) do if p and p.Parent then pcall(function() p.CanQuery = o end) end end
+    for p, o in pairs(NoclipState.savedTouch) do if p and p.Parent then pcall(function() p.CanTouch = o end) end end
+    NoclipState.savedCollide = {}; NoclipState.savedQuery = {}; NoclipState.savedTouch = {}
+    if NoclipState.charConn then NoclipState.charConn:Disconnect(); NoclipState.charConn = nil end
+end
+function setNoclip(on)
+    Settings.noclip = on
+    if on then noclipEnable() else noclipDisable() end
+    if updateUI then updateUI() end
+    if updateTabIndicators then updateTabIndicators() end
+end
+
+RunService.Heartbeat:Connect(function()
+    applyWalkSpeed(); applyJumpPower()
+end)
+RunService.PreSimulation:Connect(function()
+    if not Settings.noclip then return end
+    local c = player.Character; if not c then return end
+    for _, d in ipairs(c:GetDescendants()) do
+        if d:IsA("BasePart") then
+            if d.CanCollide or d.CanQuery or d.CanTouch then noclipApplyToPart(d) end
+        end
+    end
+end)
+UserInputService.JumpRequest:Connect(function()
+    if not Settings.infiniteJump then return end
+    if not movementAllowed() then return end
+    if isTyping() then return end
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid"); if not h then return end
+    h:ChangeState(Enum.HumanoidStateType.Jumping)
+end)
+
+-- ============ CLICK TELEPORT ============
+function doTeleportFromMouse()
+    local cam = workspace.CurrentCamera; if not cam then return end
+    local mouse = UserInputService:GetMouseLocation()
+    local ray = cam:ViewportPointToRay(mouse.X, mouse.Y)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { player.Character }
+    local result = workspace:Raycast(ray.Origin, ray.Direction * 5000, params)
+    if result and result.Position then
+        local c = player.Character
+        local r = c and c:FindFirstChild("HumanoidRootPart")
+        if r then
+            r.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0))
+            notify("Teleported", Theme.accent)
+        end
+    end
+end
+
+-- ============ INFINITE ZOOM ============
+local INFINITE_MAX = 1e9
+local INFINITE_MIN = 0.5
+function setInfiniteZoom(on)
+    Settings.infiniteZoom = on
+    if on then
+        if not InfiniteZoom.originalMax then
+            InfiniteZoom.originalMax = player.CameraMaxZoomDistance
+            InfiniteZoom.originalMin = player.CameraMinZoomDistance
+        end
+        pcall(function()
+            player.CameraMaxZoomDistance = INFINITE_MAX
+            player.CameraMinZoomDistance = INFINITE_MIN
+        end)
+        if not InfiniteZoom.conn then
+            InfiniteZoom.conn = player:GetPropertyChangedSignal("CameraMaxZoomDistance"):Connect(function()
+                if Settings.infiniteZoom and player.CameraMaxZoomDistance < INFINITE_MAX then
+                    pcall(function() player.CameraMaxZoomDistance = INFINITE_MAX end)
+                end
+            end)
+        end
+    else
+        if InfiniteZoom.originalMax then
+            pcall(function()
+                player.CameraMaxZoomDistance = InfiniteZoom.originalMax
+                player.CameraMinZoomDistance = InfiniteZoom.originalMin
+            end)
+        end
+        if InfiniteZoom.conn then InfiniteZoom.conn:Disconnect(); InfiniteZoom.conn = nil end
+        InfiniteZoom.originalMax = nil; InfiniteZoom.originalMin = nil
+    end
+    if updateUI then updateUI() end
+    if updateTabIndicators then updateTabIndicators() end
+end
+
+-- ============ POTATO ============
+local function potatoApplyPartOnly(part)
+    if not part or not part.Parent then return end
+    if not part:IsA("BasePart") then return end
+    pcall(function()
+        if part.Material ~= Enum.Material.SmoothPlastic then
+            part.Material = Enum.Material.SmoothPlastic
+        end
+    end)
+    if part:IsA("MeshPart") then
+        pcall(function()
+            if part.TextureID ~= "" then part.TextureID = "" end
+        end)
+    end
+    if part:IsA("Part") or part:IsA("WedgePart") or part:IsA("CornerWedgePart") then
+        pcall(function()
+            if part.TopSurface ~= Enum.SurfaceType.Smooth then part.TopSurface = Enum.SurfaceType.Smooth end
+            if part.BottomSurface ~= Enum.SurfaceType.Smooth then part.BottomSurface = Enum.SurfaceType.Smooth end
+            if part.LeftSurface ~= Enum.SurfaceType.Smooth then part.LeftSurface = Enum.SurfaceType.Smooth end
+            if part.RightSurface ~= Enum.SurfaceType.Smooth then part.RightSurface = Enum.SurfaceType.Smooth end
+            if part.FrontSurface ~= Enum.SurfaceType.Smooth then part.FrontSurface = Enum.SurfaceType.Smooth end
+            if part.BackSurface ~= Enum.SurfaceType.Smooth then part.BackSurface = Enum.SurfaceType.Smooth end
+        end)
+    end
+    for _, c in ipairs(part:GetChildren()) do
+        if c:IsA("Texture") or c:IsA("Decal") then
+            pcall(function() if c.Transparency < 1 then c.Transparency = 1 end end)
+        elseif c:IsA("SurfaceAppearance") then
+            pcall(function()
+                if c.ColorMap ~= "" then c.ColorMap = "" end
+                if c.NormalMap ~= "" then c.NormalMap = "" end
+                if c.RoughnessMap ~= "" then c.RoughnessMap = "" end
+                if c.MetalnessMap ~= "" then c.MetalnessMap = "" end
+            end)
+        elseif c:IsA("ParticleEmitter") or c:IsA("Fire") or c:IsA("Smoke")
+            or c:IsA("Sparkles") or c:IsA("Beam") or c:IsA("Trail")
+            or c:IsA("PointLight") or c:IsA("SpotLight") or c:IsA("SurfaceLight") then
+            pcall(function() if c.Enabled then c.Enabled = false end end)
+        end
+    end
+end
+
+local function potatoSaveStripPart(part)
+    if not part or not part.Parent then return end
+    if not part:IsDescendantOf(workspace) then return end
+    if not part:IsA("BasePart") then return end
+
+    if not part:GetAttribute(POTATO_TAG) then
+        part:SetAttribute(POTATO_TAG, true)
+        pcall(function() Potato.savedMaterial[part] = part.Material end)
+        if part:IsA("MeshPart") then
+            pcall(function() Potato.savedTextureID[part] = part.TextureID end)
+        end
+        if part:IsA("Part") or part:IsA("WedgePart") or part:IsA("CornerWedgePart") then
+            pcall(function()
+                Potato.savedSurface[part] = {
+                    Top=part.TopSurface, Bottom=part.BottomSurface,
+                    Left=part.LeftSurface, Right=part.RightSurface,
+                    Front=part.FrontSurface, Back=part.BackSurface,
+                }
+            end)
+        end
+    end
+
+    for _, c in ipairs(part:GetChildren()) do
+        if Potato.savedChild[c] == nil then
+            if c:IsA("Texture") or c:IsA("Decal") then
+                Potato.savedChild[c] = { kind="tex", val=c.Transparency }
+            elseif c:IsA("SurfaceAppearance") then
+                Potato.savedChild[c] = {
+                    kind="sa",
+                    ColorMap=c.ColorMap, NormalMap=c.NormalMap,
+                    RoughnessMap=c.RoughnessMap, MetalnessMap=c.MetalnessMap,
+                }
+            elseif c:IsA("ParticleEmitter") or c:IsA("Fire") or c:IsA("Smoke")
+                or c:IsA("Sparkles") or c:IsA("Beam") or c:IsA("Trail")
+                or c:IsA("PointLight") or c:IsA("SpotLight") or c:IsA("SurfaceLight") then
+                Potato.savedChild[c] = { kind="emitter", val=c.Enabled }
+            end
+        end
+    end
+
+    potatoApplyPartOnly(part)
+
+    if not part:GetAttribute(POTATO_WATCH) then
+        part:SetAttribute(POTATO_WATCH, true)
+        pcall(function()
+            part:GetPropertyChangedSignal("Material"):Connect(function()
+                if not Potato.active then return end
+                if part.Material ~= Enum.Material.SmoothPlastic then
+                    pcall(function() part.Material = Enum.Material.SmoothPlastic end)
+                end
+            end)
+        end)
+        if part:IsA("MeshPart") then
+            pcall(function()
+                part:GetPropertyChangedSignal("TextureID"):Connect(function()
+                    if not Potato.active then return end
+                    if part.TextureID ~= "" then
+                        pcall(function() part.TextureID = "" end)
+                    end
+                end)
+            end)
+        end
+        pcall(function()
+            part.ChildAdded:Connect(function(c)
+                if not Potato.active then return end
+                task.defer(function()
+                    if not Potato.active or not c or not c.Parent then return end
+                    if Potato.savedChild[c] == nil then
+                        if c:IsA("Texture") or c:IsA("Decal") then
+                            Potato.savedChild[c] = { kind="tex", val=c.Transparency }
+                        elseif c:IsA("SurfaceAppearance") then
+                            Potato.savedChild[c] = {
+                                kind="sa",
+                                ColorMap=c.ColorMap, NormalMap=c.NormalMap,
+                                RoughnessMap=c.RoughnessMap, MetalnessMap=c.MetalnessMap,
+                            }
+                        elseif c:IsA("ParticleEmitter") or c:IsA("Fire") or c:IsA("Smoke")
+                            or c:IsA("Sparkles") or c:IsA("Beam") or c:IsA("Trail")
+                            or c:IsA("PointLight") or c:IsA("SpotLight") or c:IsA("SurfaceLight") then
+                            Potato.savedChild[c] = { kind="emitter", val=c.Enabled }
+                        end
+                    end
+                    if c:IsA("Texture") or c:IsA("Decal") then
+                        pcall(function() if c.Transparency < 1 then c.Transparency = 1 end end)
+                    elseif c:IsA("SurfaceAppearance") then
+                        pcall(function()
+                            c.ColorMap = ""; c.NormalMap = ""
+                            c.RoughnessMap = ""; c.MetalnessMap = ""
+                        end)
+                    elseif c:IsA("ParticleEmitter") or c:IsA("Fire") or c:IsA("Smoke")
+                        or c:IsA("Sparkles") or c:IsA("Beam") or c:IsA("Trail")
+                        or c:IsA("PointLight") or c:IsA("SpotLight") or c:IsA("SurfaceLight") then
+                        pcall(function() if c.Enabled then c.Enabled = false end end)
+                    end
+                end)
+            end)
+        end)
+    end
+end
+
+local function potatoSaveStripChild(c)
+    if not c or not c.Parent then return end
+    if Potato.savedChild[c] == nil then
+        if c:IsA("Texture") or c:IsA("Decal") then
+            Potato.savedChild[c] = { kind="tex", val=c.Transparency }
+        elseif c:IsA("SurfaceAppearance") then
+            Potato.savedChild[c] = {
+                kind="sa",
+                ColorMap=c.ColorMap, NormalMap=c.NormalMap,
+                RoughnessMap=c.RoughnessMap, MetalnessMap=c.MetalnessMap,
+            }
+        elseif c:IsA("ParticleEmitter") or c:IsA("Fire") or c:IsA("Smoke")
+            or c:IsA("Sparkles") or c:IsA("Beam") or c:IsA("Trail")
+            or c:IsA("PointLight") or c:IsA("SpotLight") or c:IsA("SurfaceLight") then
+            Potato.savedChild[c] = { kind="emitter", val=c.Enabled }
+        end
+    end
+    if c:IsA("Texture") or c:IsA("Decal") then
+        pcall(function() if c.Transparency < 1 then c.Transparency = 1 end end)
+    elseif c:IsA("SurfaceAppearance") then
+        pcall(function()
+            c.ColorMap = ""; c.NormalMap = ""
+            c.RoughnessMap = ""; c.MetalnessMap = ""
+        end)
+    elseif c:IsA("ParticleEmitter") or c:IsA("Fire") or c:IsA("Smoke")
+        or c:IsA("Sparkles") or c:IsA("Beam") or c:IsA("Trail")
+        or c:IsA("PointLight") or c:IsA("SpotLight") or c:IsA("SurfaceLight") then
+        pcall(function() if c.Enabled then c.Enabled = false end end)
+    end
+end
+
+local function potatoSweep()
+    local i = 0
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if not Potato.active then return end
+        if d:IsA("BasePart") then
+            if d:GetAttribute(POTATO_TAG) then
+                potatoApplyPartOnly(d)
+            else
+                potatoSaveStripPart(d)
+            end
+        elseif d:IsA("Texture") or d:IsA("Decal") or d:IsA("SurfaceAppearance")
+            or d:IsA("ParticleEmitter") or d:IsA("Fire") or d:IsA("Smoke")
+            or d:IsA("Sparkles") or d:IsA("Beam") or d:IsA("Trail")
+            or d:IsA("PointLight") or d:IsA("SpotLight") or d:IsA("SurfaceLight") then
+            potatoSaveStripChild(d)
+        end
+        i = i + 1
+        if i >= 3000 then i = 0; task.wait() end
+    end
+end
+
+local function potatoStartSweep()
+    if Potato.sweepAlive then return end
+    Potato.sweepAlive = true
+    task.spawn(function()
+        potatoSweep()
+        while Potato.active do
+            task.wait(0.4)
+            if Potato.active then potatoSweep() end
+        end
+        Potato.sweepAlive = false
+    end)
+end
+
+local function potatoRestoreAll()
+    for part, mat in pairs(Potato.savedMaterial) do
+        if part and part.Parent then
+            pcall(function() part.Material = mat end)
+            pcall(function() part:SetAttribute(POTATO_TAG, nil) end)
+        end
+    end
+    Potato.savedMaterial = {}
+    for part, tex in pairs(Potato.savedTextureID) do
+        if part and part.Parent then pcall(function() part.TextureID = tex end) end
+    end
+    Potato.savedTextureID = {}
+    for part, s in pairs(Potato.savedSurface) do
+        if part and part.Parent then
+            pcall(function()
+                part.TopSurface = s.Top; part.BottomSurface = s.Bottom
+                part.LeftSurface = s.Left; part.RightSurface = s.Right
+                part.FrontSurface = s.Front; part.BackSurface = s.Back
+            end)
+        end
+    end
+    Potato.savedSurface = {}
+    for inst, rec in pairs(Potato.savedChild) do
+        if inst and inst.Parent then
+            if rec.kind == "tex" then
+                pcall(function() inst.Transparency = rec.val end)
+            elseif rec.kind == "sa" then
+                pcall(function()
+                    inst.ColorMap = rec.ColorMap; inst.NormalMap = rec.NormalMap
+                    inst.RoughnessMap = rec.RoughnessMap; inst.MetalnessMap = rec.MetalnessMap
+                end)
+            elseif rec.kind == "emitter" then
+                pcall(function() inst.Enabled = rec.val end)
+            end
+        end
+    end
+    Potato.savedChild = {}
+end
+
+function setPotato(on)
+    Potato.active = on
+    Settings.potato = on
+    if updateUI then task.defer(updateUI) end
+    if updateTabIndicators then task.defer(updateTabIndicators) end
+
+    if on then
+        if not Potato.savedLighting then
+            Potato.savedLighting = {
+                GlobalShadows=Lighting.GlobalShadows,
+                Brightness=Lighting.Brightness,
+                Ambient=Lighting.Ambient,
+                OutdoorAmbient=Lighting.OutdoorAmbient,
+                EnvironmentDiffuseScale=Lighting.EnvironmentDiffuseScale,
+                EnvironmentSpecularScale=Lighting.EnvironmentSpecularScale,
+                FogEnd=Lighting.FogEnd,
+            }
+        end
+        pcall(function()
+            Lighting.GlobalShadows = false
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(180,180,180)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180,180,180)
+            Lighting.EnvironmentDiffuseScale = 0
+            Lighting.EnvironmentSpecularScale = 0
+            Lighting.FogEnd = 1e6
+        end)
+        for _, c in ipairs(Lighting:GetChildren()) do
+            if c:IsA("PostEffect") or c:IsA("Atmosphere") then
+                if Potato.savedPostFx[c] == nil then Potato.savedPostFx[c] = c.Enabled end
+                pcall(function() c.Enabled = false end)
+            end
+        end
+        if not Potato.descendantConn then
+            Potato.descendantConn = workspace.DescendantAdded:Connect(function(d)
+                if not Potato.active or not d or not d.Parent then return end
+                task.defer(function()
+                    if not Potato.active or not d or not d.Parent then return end
+                    if d:IsA("BasePart") then
+                        potatoSaveStripPart(d)
+                    else
+                        potatoSaveStripChild(d)
+                    end
+                end)
+            end)
+        end
+        potatoStartSweep()
+    else
+        if Potato.savedLighting then
+            for k, v in pairs(Potato.savedLighting) do
+                pcall(function() Lighting[k] = v end)
+            end
+            Potato.savedLighting = nil
+        end
+        for fx, state in pairs(Potato.savedPostFx) do
+            if fx and fx.Parent then pcall(function() fx.Enabled = state end) end
+        end
+        Potato.savedPostFx = {}
+        potatoRestoreAll()
+        if Potato.descendantConn then
+            Potato.descendantConn:Disconnect()
+            Potato.descendantConn = nil
+        end
+    end
+
+    if updateUI then updateUI() end
+    if updateTabIndicators then updateTabIndicators() end
+end
+
+-- ============ FULLBRIGHT ============
+function applyFullbright(on)
+    Settings.fullbright = on
+    if on then
+        if not Fullbright.original then
+            Fullbright.original = {
+                Ambient=Lighting.Ambient, OutdoorAmbient=Lighting.OutdoorAmbient,
+                Brightness=Lighting.Brightness, GlobalShadows=Lighting.GlobalShadows,
+                FogEnd=Lighting.FogEnd,
+            }
+        end
+        Lighting.Ambient = Color3.fromRGB(200,200,200)
+        Lighting.OutdoorAmbient = Color3.fromRGB(200,200,200)
+        Lighting.Brightness = 3; Lighting.GlobalShadows = false; Lighting.FogEnd = 1e6
+    else
+        if Fullbright.original then
+            Lighting.Ambient = Fullbright.original.Ambient
+            Lighting.OutdoorAmbient = Fullbright.original.OutdoorAmbient
+            Lighting.Brightness = Fullbright.original.Brightness
+            Lighting.GlobalShadows = Fullbright.original.GlobalShadows
+            Lighting.FogEnd = Fullbright.original.FogEnd
+            Fullbright.original = nil
+        end
+    end
+end
+
+-- ============ NOTIFICATIONS ============
+local notifContainer
+local function ensureNotifContainer()
+    if notifContainer and notifContainer.Parent then return notifContainer end
+    local sg = player.PlayerGui:FindFirstChild("FlyHacksUI"); if not sg then return nil end
+    local c = sg:FindFirstChild("NotifContainer")
+    if not c then
+        c = Instance.new("Frame"); c.Name="NotifContainer"; c.Size=UDim2.new(0,320,0,400)
+        c.Position=UDim2.new(0.5,-160,0,22); c.BackgroundTransparency=1; c.Active=false
+        c.Parent=sg
+        local l = Instance.new("UIListLayout"); l.Padding=UDim.new(0,6)
+        l.SortOrder=Enum.SortOrder.LayoutOrder; l.Parent=c
+    end
+    notifContainer = c; return c
+end
+function notify(text, color)
+    if not Settings.notifications then return end
+    local container = ensureNotifContainer(); if not container then return end
+    local accent = color or Theme.accent
+    local n = Instance.new("Frame")
+    n.Size=UDim2.new(1,0,0,0); n.BackgroundColor3=Theme.surface2; n.BackgroundTransparency=1
+    n.BorderSizePixel=0; n.ClipsDescendants=true; n.Active=false; n.Parent=container
+    tagBg(n,"surface2")
+    local c = Instance.new("UICorner"); c.CornerRadius=UDim.new(0,10); c.Parent=n
+    local s = Instance.new("UIStroke"); s.Thickness=1; s.Color=accent; s.Transparency=1; s.Parent=n
+    local l = Instance.new("TextLabel"); l.Size=UDim2.new(1,-40,1,0); l.Position=UDim2.new(0,20,0,0)
+    l.BackgroundTransparency=1; l.Text=text; l.TextColor3=Theme.text; l.TextSize=13
+    l.Font=Enum.Font.GothamMedium; l.TextXAlignment=Enum.TextXAlignment.Left
+    l.TextTransparency=1; l.Parent=n
+    tagText(l,"text")
+    local inInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    TweenService:Create(n,inInfo,{Size=UDim2.new(1,0,0,42),BackgroundTransparency=0}):Play()
+    TweenService:Create(s,inInfo,{Transparency=0.55}):Play()
+    TweenService:Create(l,inInfo,{TextTransparency=0}):Play()
+    task.delay(2.4, function()
+        if not n.Parent then return end
+        local outInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+        TweenService:Create(n,outInfo,{Size=UDim2.new(1,0,0,0),BackgroundTransparency=1}):Play()
+        TweenService:Create(s,outInfo,{Transparency=1}):Play()
+        TweenService:Create(l,outInfo,{TextTransparency=1}):Play()
+        task.wait(0.32); if n.Parent then n:Destroy() end
+    end)
+end
+
+-- ============ UI FACTORIES ============
+local function colorToThemeKey(c)
+    if not c then return nil end
+    for k, v in pairs(Theme) do
+        if typeof(v) == "Color3" and v == c then return k end
+    end
+    return nil
+end
+
+local function makeLabel(parent, o)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency=1; l.Text=o.text or ""; l.TextSize=o.size or 13
+    local textColor = o.color or Theme[o.colorKey or "text"]
+    local textKey = o.colorKey
+    if not textKey and o.color then
+        textKey = colorToThemeKey(o.color)
+    end
+    l.TextColor3 = textColor
+    l.Font = o.font or Enum.Font.GothamMedium
+    l.Size = o.sizeUDim or UDim2.new(1,0,0,20); l.Position = o.pos or UDim2.new(0,0,0,0)
+    l.TextXAlignment = o.align or Enum.TextXAlignment.Left
+    l.TextTruncate = Enum.TextTruncate.AtEnd; l.Parent = parent
+    if textKey then tagText(l, textKey) end
+    return l
+end
+
+function pulseButton(btn)
+    if not btn then return end
+    local b = btn.btn or btn
+    local ps = b:FindFirstChild("_PulseScale")
+    if not ps then
+        ps = Instance.new("UIScale")
+        ps.Name = "_PulseScale"
+        ps.Scale = 1
+        ps.Parent = b
+    end
+    ps.Scale = 1.06
+    TweenService:Create(ps, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+end
+
+local function makeButton(parent, o)
+    local b = Instance.new("TextButton")
+    b.Size = o.size or UDim2.new(0,200,0,40); b.Position = o.pos or UDim2.new(0,0,0,0)
+    b.BackgroundColor3 = o.bg or Theme.surface2; b.BorderSizePixel=0; b.Text=""
+    b.AutoButtonColor=false; b.ClipsDescendants=true; b.Parent=parent
+    tagBg(b, o.bgKey or "surface2")
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, o.radius or 8); c.Parent=b
+    local s = Instance.new("UIStroke"); s.Thickness=1; s.Color = o.border or Theme.border; s.Parent=b
+    tagStroke(s, o.borderKey or "border")
+    local l = Instance.new("TextLabel")
+    l.Size=UDim2.new(1,0,1,0); l.BackgroundTransparency=1; l.Text=o.text or ""
+    local textColor = o.textColor or Theme.text
+    local textKey = o.textColorKey
+    if not textKey and o.textColor then
+        textKey = colorToThemeKey(o.textColor)
+    end
+    l.TextColor3 = textColor; l.TextSize = o.textSize or 14
+    l.Font = o.font or Enum.Font.GothamMedium; l.Active=false; l.ZIndex=2; l.Parent=b
+    if textKey then tagText(l, textKey) end
+
+    local ps = Instance.new("UIScale")
+    ps.Name = "_PulseScale"
+    ps.Scale = 1
+    ps.Parent = b
+
+    b.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(ps, TweenInfo.new(0.08), {Scale = 0.96}):Play()
+
+            -- Ripple animation
+            local abs = b.AbsolutePosition
+            local loc = UserInputService:GetMouseLocation()
+            local relX = loc.X - abs.X
+            local relY = loc.Y - abs.Y
+            if relX < 0 or relY < 0 or relX > b.AbsoluteSize.X or relY > b.AbsoluteSize.Y then
+                relX = b.AbsoluteSize.X * 0.5
+                relY = b.AbsoluteSize.Y * 0.5
+            end
+            local ripple = Instance.new("Frame")
+            ripple.Name = "_Ripple"
+            ripple.BackgroundColor3 = Color3.fromRGB(255,255,255)
+            ripple.BackgroundTransparency = 0.82
+            ripple.BorderSizePixel = 0
+            ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+            ripple.Position = UDim2.new(0, relX, 0, relY)
+            ripple.Size = UDim2.new(0, 0, 0, 0)
+            ripple.ZIndex = 1
+            ripple.Active = false
+            local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(1,0); rc.Parent = ripple
+            ripple.Parent = b
+            local maxDim = math.max(b.AbsoluteSize.X, b.AbsoluteSize.Y) * 2.2
+            TweenService:Create(ripple, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, maxDim, 0, maxDim),
+                BackgroundTransparency = 1,
+            }):Play()
+            task.delay(0.6, function() if ripple.Parent then ripple:Destroy() end end)
+        end
+    end)
+    b.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(ps, TweenInfo.new(0.16, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        end
+    end)
+
+    if not o.noHover then
+        b.MouseEnter:Connect(function()
+            TweenService:Create(s,TweenInfo.new(0.15),{Color=o.hoverBorder or Theme.textMute}):Play()
+        end)
+        b.MouseLeave:Connect(function()
+            if b:GetAttribute("ToggledOn") then
+                TweenService:Create(s,TweenInfo.new(0.15),{Color=Theme.accent}):Play()
+            else
+                local key = s:GetAttribute("Theme_Stroke")
+                local rest = (key and Theme[key]) or Theme.border
+                TweenService:Create(s,TweenInfo.new(0.15),{Color=rest}):Play()
+            end
+        end)
+    end
+    return { btn=b, label=l, stroke=s, pulseScale=ps }
+end
+
+local function makeDivider(parent, y, pad)
+    pad = pad or 0
+    local d = Instance.new("Frame")
+    d.Size=UDim2.new(1,-pad*2,0,1); d.Position=UDim2.new(0,pad,0,y)
+    d.BackgroundColor3=Theme.border; d.BorderSizePixel=0; d.Parent=parent
+    tagBg(d,"border")
+    return d
+end
+
+local function makeInfoRow(parent, y, label, valueText, pad_, badgeW, valFontSize)
+    badgeW = badgeW or 60; valFontSize = valFontSize or 14
+    local row = Instance.new("Frame")
+    row.Size=UDim2.new(1,-pad_*2,0,32); row.Position=UDim2.new(0,pad_,0,y)
+    row.BackgroundColor3=Theme.surface2; row.BorderSizePixel=0; row.Parent=parent
+    tagBg(row,"surface2")
+    local rc = Instance.new("UICorner"); rc.CornerRadius=UDim.new(0,8); rc.Parent=row
+    local rs = Instance.new("UIStroke"); rs.Thickness=1; rs.Color=Theme.border; rs.Parent=row
+    tagStroke(rs,"border")
+    local lbl = Instance.new("TextLabel")
+    lbl.Size=UDim2.new(1,-badgeW-24,1,0); lbl.Position=UDim2.new(0,12,0,0)
+    lbl.BackgroundTransparency=1; lbl.Text=label; lbl.TextColor3=Theme.textDim
+    lbl.TextSize=12; lbl.Font=Enum.Font.GothamMedium; lbl.TextXAlignment=Enum.TextXAlignment.Left
+    lbl.Parent=row; tagText(lbl,"textDim")
+    local badge = Instance.new("Frame")
+    badge.Size=UDim2.new(0,badgeW,0,20); badge.Position=UDim2.new(1,-badgeW-12,0.5,-10)
+    badge.BackgroundColor3=Theme.surface3; badge.BorderSizePixel=0; badge.Parent=row
+    tagBg(badge,"surface3")
+    local bc = Instance.new("UICorner"); bc.CornerRadius=UDim.new(0,6); bc.Parent=badge
+    local val = Instance.new("TextLabel")
+    val.Size=UDim2.new(1,-8,1,0); val.Position=UDim2.new(0,4,0,0)
+    val.BackgroundTransparency=1; val.Text=valueText; val.TextColor3=Theme.text
+    val.TextSize=valFontSize; val.Font=Enum.Font.GothamBold
+    val.TextTruncate=Enum.TextTruncate.AtEnd; val.Parent=badge
+    tagText(val,"text")
+
+    row.MouseEnter:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.15), {BackgroundColor3 = Theme.surface3}):Play()
+        TweenService:Create(rs, TweenInfo.new(0.15), {Color = Theme.accent}):Play()
+    end)
+    row.MouseLeave:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.15), {BackgroundColor3 = Theme.surface2}):Play()
+        local key = rs:GetAttribute("Theme_Stroke")
+        local rest = (key and Theme[key]) or Theme.border
+        TweenService:Create(rs, TweenInfo.new(0.15), {Color = rest}):Play()
+    end)
+
+    return { row=row, label=lbl, value=val, badge=badge }
+end
+
+-- ============ SLIDER ============
+local function createSlider(parent, o)
+    local h = Instance.new("Frame"); h.Size=o.size or UDim2.new(1,0,0,40); h.Position=o.pos
+    h.BackgroundTransparency=1; h.Parent=parent
+    local top = Instance.new("Frame"); top.Size=UDim2.new(1,0,0,20); top.BackgroundTransparency=1; top.Parent=h
+    local lbl = Instance.new("TextLabel")
+    lbl.Size=UDim2.new(0.5,0,1,0); lbl.BackgroundTransparency=1; lbl.Text=o.label
+    lbl.TextColor3=Theme.textDim; lbl.TextSize=12; lbl.Font=Enum.Font.GothamMedium
+    lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=top; tagText(lbl,"textDim")
+    local vl = Instance.new("TextLabel")
+    vl.Size=UDim2.new(0.5,0,1,0); vl.Position=UDim2.new(0.5,0,0,0); vl.BackgroundTransparency=1
+    vl.Text=tostring(o.initial); vl.TextColor3=Theme.text; vl.TextSize=13; vl.Font=Enum.Font.GothamBold
+    vl.TextXAlignment=Enum.TextXAlignment.Right; vl.Parent=top; tagText(vl,"text")
+    local track = Instance.new("Frame")
+    track.Size=UDim2.new(1,0,0,4); track.Position=UDim2.new(0,0,0,28)
+    track.BackgroundColor3=Theme.surface3; track.BorderSizePixel=0; track.Parent=h
+    tagBg(track,"surface3"); track.Active = true
+    local tc = Instance.new("UICorner"); tc.CornerRadius=UDim.new(1,0); tc.Parent=track
+    local fill = Instance.new("Frame")
+    fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=o.accent or Theme.accent
+    fill.BorderSizePixel=0; fill.Parent=track
+    local fc = Instance.new("UICorner"); fc.CornerRadius=UDim.new(1,0); fc.Parent=fill
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 22, 0, 22)
+    knob.Position = UDim2.new(0, -11, 0.5, -11)
+    knob.BackgroundTransparency = 1
+    knob.ZIndex = 3
+    knob.Parent = track
+
+    local knobDot = Instance.new("Frame")
+    knobDot.Size = UDim2.new(0, 14, 0, 14)
+    knobDot.Position = UDim2.new(0.5, -7, 0.5, -7)
+    knobDot.BackgroundColor3 = Theme.text
+    knobDot.BorderSizePixel = 0
+    knobDot.ZIndex = 3
+    knobDot.Parent = knob
+    local kdc = Instance.new("UICorner"); kdc.CornerRadius = UDim.new(1,0); kdc.Parent = knobDot
+    tagBg(knobDot, "text")
+
+    local skullLbl = Instance.new("TextLabel")
+    skullLbl.Size = UDim2.new(1, 0, 1, 0)
+    skullLbl.BackgroundTransparency = 1
+    skullLbl.Text = "💀"
+    skullLbl.TextSize = 18
+    skullLbl.Font = Enum.Font.GothamBold
+    skullLbl.TextColor3 = Color3.fromRGB(255,255,255)
+    skullLbl.TextStrokeTransparency = 0.5
+    skullLbl.TextStrokeColor3 = Color3.fromRGB(0,0,0)
+    skullLbl.ZIndex = 4
+    skullLbl.Visible = false
+    skullLbl.Active = false
+    skullLbl.Parent = knob
+
+    local sl = { min=o.min, max=o.max, track=track, fill=fill, knob=knob, knobDot=knobDot, skullLbl=skullLbl }
+    local function setVal(v, fire)
+        v = math.clamp(v, o.min, o.max)
+        local pct = (v - o.min) / (o.max - o.min)
+        fill.Size = UDim2.new(pct,0,1,0)
+        knob.Position = UDim2.new(pct, -11, 0.5, -11)
+        local r = math.floor(v+0.5)
+        if o.formatter then vl.Text = o.formatter(r) else vl.Text = tostring(r) end
+        if fire and o.onChange then o.onChange(r) end
+    end
+    sl.updateFromMouse = function(mx)
+        local pos = track.AbsolutePosition; local size = track.AbsoluteSize
+        if size.X <= 0 then return end
+        local pct = math.clamp((mx - pos.X)/size.X, 0, 1)
+        setVal(o.min + (o.max - o.min)*pct, true)
+    end
+    sl.setValue = function(v) setVal(v, true) end
+    sl.setValueSilent = function(v) setVal(v, false) end
+    sl.setFillColor = function(c) fill.BackgroundColor3 = c end
+    sl.applyThemeKnob = function()
+        if Theme.mango then
+            knobDot.Visible = false
+            skullLbl.Visible = true
+        else
+            knobDot.Visible = true
+            skullLbl.Visible = false
+        end
+    end
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            activeSlider = sl; sl.updateFromMouse(input.Position.X)
+        end
+    end)
+    setVal(o.initial, false)
+    if not ui.allSliders then ui.allSliders = {} end
+    table.insert(ui.allSliders, sl)
+    sl.applyThemeKnob()
+    return sl
+end
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+       and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    if activeSlider then activeSlider.updateFromMouse(UserInputService:GetMouseLocation().X) end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        activeSlider = nil
+    end
+end)
+
+-- ============ FLIGHT ============
+local function startFly()
+    if Freecam.active then return end
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyGyro then bodyGyro:Destroy() end
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(10000,10000,10000)
+    bodyVelocity.Velocity = Vector3.new(0,0,0); bodyVelocity.Parent = rootPart
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(4000,4000,4000)
+    bodyGyro.D = 500; bodyGyro.P = 2000; bodyGyro.CFrame = rootPart.CFrame
+    bodyGyro.Parent = rootPart
+    if humanoid then
+        FlySaved.humanoid = humanoid
+        FlySaved.walkSpeed = humanoid.WalkSpeed
+        FlySaved.jumpPower = humanoid.JumpPower
+        humanoid.WalkSpeed = 0; humanoid.JumpPower = 0; humanoid.AutoRotate = false
+    end
+    Settings.flying = true
+    notify("Fly enabled", Theme.accent); updateUI(); updateTabIndicators()
+end
+local function stopFly()
+    if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity=nil end
+    if bodyGyro then bodyGyro:Destroy(); bodyGyro=nil end
+    Settings.flying = false
+    if FlySaved.humanoid and FlySaved.humanoid.Parent then
+        FlySaved.humanoid.WalkSpeed = FlySaved.walkSpeed
+        FlySaved.humanoid.JumpPower = FlySaved.jumpPower
+        FlySaved.humanoid.AutoRotate = true
+    end
+    FlySaved.humanoid = nil
+    if humanoid and humanoid.Parent then humanoid.AutoRotate = true end
+    task.defer(function() applyWalkSpeed(); applyJumpPower() end)
+    notify("Fly disabled", Theme.danger); updateUI(); updateTabIndicators()
+end
+
+RunService.RenderStepped:Connect(function(dt)
+    if not Settings.flying then return end
+    if not bodyVelocity or not bodyGyro or not rootPart or not rootPart.Parent then return end
+    local cam = workspace.CurrentCamera; if not cam then return end
+    local move = Vector3.new(0,0,0)
+    if not isTyping() then
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+           or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+            move = move - Vector3.new(0,1,0)
+        end
+    end
+    if move.Magnitude > 0.001 then
+        bodyVelocity.Velocity = move.Unit * Settings.flySpeed
+    else
+        bodyVelocity.Velocity = Vector3.new(0,0,0)
+    end
+    bodyGyro.CFrame = CFrame.new(rootPart.Position, rootPart.Position + cam.CFrame.LookVector)
+end)
+
+-- ============ ESP ============
+local ESP_BASE = { bbW=160, bbH=50, nameSize=12, distSize=11, studsOffsetY=2.4 }
+function applyEspScaleToEntry(e)
+    if not e or not e.billboard then return end
+    local s = Settings.espScale or 1.0
+    e.billboard.Size = UDim2.new(0, ESP_BASE.bbW * s, 0, ESP_BASE.bbH * s)
+    e.billboard.StudsOffset = Vector3.new(0, ESP_BASE.studsOffsetY * s, 0)
+    if e.nameLbl then e.nameLbl.TextSize = ESP_BASE.nameSize * s end
+    if e.distLabel then e.distLabel.TextSize = ESP_BASE.distSize * s end
+    if e.healthBg then
+        e.healthBg.Size = UDim2.new(1, -8*s, 0, math.max(3, 6*s))
+        e.healthBg.Position = UDim2.new(0, 4*s, 0, 21*s)
+    end
+end
+function applyEspNamesToEntry(e)
+    if not e or not e.billboard then return end
+    e.billboard.Enabled = Settings.espNames
+end
+local function clearEntryVisuals(e)
+    if e.highlight then e.highlight:Destroy(); e.highlight=nil end
+    if e.billboard then e.billboard:Destroy(); e.billboard=nil end
+    if e.tracer then e.tracer:Destroy(); e.tracer=nil end
+    e.distLabel=nil; e.healthFill=nil; e.healthBg=nil; e.humanoid=nil; e.nameLbl=nil
+end
+local function buildEntryVisuals(plr, e)
+    local char = plr.Character; if not char then return end
+    local head = char:FindFirstChild("Head")
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local hl = Instance.new("Highlight")
+    hl.Name="FlyHacksESP"; hl.Adornee=char; hl.FillColor=ESPColor.fill; hl.FillTransparency=0.45
+    hl.OutlineColor=ESPColor.outline; hl.OutlineTransparency=0
+    hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent=char
+    local bb = Instance.new("BillboardGui")
+    bb.Name="FlyHacksESPName"; bb.Adornee=head or root
+    bb.Size=UDim2.new(0, ESP_BASE.bbW, 0, ESP_BASE.bbH)
+    bb.StudsOffset=Vector3.new(0, ESP_BASE.studsOffsetY, 0)
+    bb.AlwaysOnTop=true; bb.LightInfluence=0; bb.MaxDistance=math.huge
+    bb.ResetOnSpawn=false; bb.Parent=char
+    local bg = Instance.new("Frame")
+    bg.Size=UDim2.new(1,0,1,0); bg.BackgroundColor3=Color3.fromRGB(0,0,0); bg.BackgroundTransparency=0.3
+    bg.BorderSizePixel=0; bg.Parent=bb
+    local bgc = Instance.new("UICorner"); bgc.CornerRadius=UDim.new(0,4); bgc.Parent=bg
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Size=UDim2.new(1,-6,0,18); nameLbl.Position=UDim2.new(0,3,0,1)
+    nameLbl.BackgroundTransparency=1; nameLbl.Text=plr.DisplayName.." (@"..plr.Name..")"
+    nameLbl.TextColor3=Color3.fromRGB(255,255,255); nameLbl.TextStrokeTransparency=0
+    nameLbl.TextStrokeColor3=Color3.fromRGB(0,0,0); nameLbl.TextSize=ESP_BASE.nameSize
+    nameLbl.Font=Enum.Font.GothamBold; nameLbl.Parent=bb
+    local hbg = Instance.new("Frame")
+    hbg.Name="HealthBar"; hbg.Size=UDim2.new(1,-8,0,6); hbg.Position=UDim2.new(0,4,0,21)
+    hbg.BackgroundColor3=Color3.fromRGB(0,0,0); hbg.BackgroundTransparency=0.35
+    hbg.BorderSizePixel=0; hbg.Parent=bb
+    local hbgc = Instance.new("UICorner"); hbgc.CornerRadius=UDim.new(1,0); hbgc.Parent=hbg
+    local hf = Instance.new("Frame")
+    hf.Name="Fill"; hf.Size=UDim2.new(1,0,1,0); hf.BackgroundColor3=Color3.fromRGB(80,220,100)
+    hf.BorderSizePixel=0; hf.Parent=hbg
+    local hfc = Instance.new("UICorner"); hfc.CornerRadius=UDim.new(1,0); hfc.Parent=hf
+    local dl = Instance.new("TextLabel")
+    dl.Size=UDim2.new(1,-6,0,14); dl.Position=UDim2.new(0,3,0,31); dl.BackgroundTransparency=1
+    dl.Text="0 studs"; dl.TextColor3=ESPColor.dist; dl.TextStrokeTransparency=0
+    dl.TextStrokeColor3=Color3.fromRGB(0,0,0); dl.TextSize=ESP_BASE.distSize
+    dl.Font=Enum.Font.Gotham; dl.Parent=bb
+    e.highlight=hl; e.billboard=bb; e.distLabel=dl; e.healthFill=hf; e.healthBg=hbg
+    e.humanoid=hum; e.nameLbl=nameLbl
+    applyEspScaleToEntry(e); applyEspNamesToEntry(e)
+    if tracerContainer then
+        local tr = Instance.new("Frame")
+        tr.Name="FlyHacksTracer"; tr.AnchorPoint=Vector2.new(0.5,0.5)
+        tr.BackgroundColor3=ESPColor.outline; tr.BackgroundTransparency=0.35
+        tr.BorderSizePixel=0; tr.Size=UDim2.new(0,0,0,1); tr.ZIndex=0; tr.Visible=false
+        tr.Parent=tracerContainer; e.tracer=tr
+    end
+end
+function createESPForPlayer(plr)
+    if plr==player then return end
+    if ESP.entries[plr] then return end
+    if not ESP.selected[plr] then return end
+    local e = { conns={} }; ESP.entries[plr] = e; buildEntryVisuals(plr, e)
+    e.conns[#e.conns+1] = plr.CharacterAdded:Connect(function()
+        clearEntryVisuals(e)
+        local char = plr.Character or plr.CharacterAdded:Wait()
+        char:WaitForChild("HumanoidRootPart",10); task.wait(0.05)
+        if ESP.enabled and ESP.selected[plr] and ESP.entries[plr] then buildEntryVisuals(plr,e) end
+    end)
+end
+function removeESPForPlayer(plr)
+    local e = ESP.entries[plr]; if not e then return end
+    clearEntryVisuals(e)
+    for _,c in ipairs(e.conns) do if c.Connected then c:Disconnect() end end
+    ESP.entries[plr] = nil
+end
+local function enableESP()
+    ESP.enabled = true
+    for _,plr in ipairs(Players:GetPlayers()) do if ESP.selected[plr] then createESPForPlayer(plr) end end
+    if not ESP.addedConn then
+        ESP.addedConn = Players.PlayerAdded:Connect(function(plr)
+            task.wait(0.2); rebuildPlayerList()
+            if ESP.enabled and ESP.selected[plr] then createESPForPlayer(plr) end
+        end)
+    end
+    if not ESP.removedConn then
+        ESP.removedConn = Players.PlayerRemoving:Connect(function(plr)
+            ESP.selected[plr] = nil; removeESPForPlayer(plr)
+            if Spectate.target==plr then stopSpectate() end
+            rebuildPlayerList()
+        end)
+    end
+    notify("ESP enabled", Theme.accent); updateUI(); updateTabIndicators()
+end
+function disableESP()
+    ESP.enabled = false
+    for plr,_ in pairs(ESP.entries) do removeESPForPlayer(plr) end
+    ESP.entries = {}; notify("ESP disabled", Theme.danger); updateUI(); updateTabIndicators()
+end
+function toggleESP() if ESP.enabled then disableESP() else enableESP() end end
+local function setESPColor(name)
+    local p = COLOR_PRESETS[name]; if not p then return end
+    ESP.colorName = name; ESPColor.fill=p.fill; ESPColor.outline=p.outline; ESPColor.dist=p.dist
+    for _, e in pairs(ESP.entries) do
+        if e.highlight then e.highlight.FillColor=p.fill; e.highlight.OutlineColor=p.outline end
+        if e.distLabel then e.distLabel.TextColor3=p.dist end
+        if e.tracer then e.tracer.BackgroundColor3=p.outline end
+    end
+    if ui.swatches then
+        for n,sw in pairs(ui.swatches) do
+            if n==name then sw.stroke.Color=Theme.accent; sw.stroke.Thickness=3
+            else sw.stroke.Color=Color3.fromRGB(0,0,0); sw.stroke.Thickness=1 end
+        end
+    end
+end
+local function updateESP()
+    for plr, e in pairs(ESP.entries) do
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and e.distLabel then
+            local d = (plr.Character.HumanoidRootPart.Position - rootPart.Position).Magnitude
+            e.distLabel.Text = math.floor(d).." studs"
+        end
+        if e.healthFill and e.humanoid then
+            e.healthFill.Size = UDim2.new(math.clamp(e.humanoid.Health/e.humanoid.MaxHealth,0,1),0,1,0)
+        end
+        if e.tracer then
+            if Settings.tracers and plr.Character and plr.Character:FindFirstChild("Head") then
+                local sp = workspace.CurrentCamera:WorldToViewportPoint(plr.Character.Head.Position)
+                if sp.Z > 0 then
+                    local origin = Vector2.new(workspace.CurrentCamera.ViewportSize.X/2, workspace.CurrentCamera.ViewportSize.Y)
+                    local dir = (Vector2.new(sp.X, sp.Y) - origin)
+                    local len = dir.Magnitude
+                    local ang = math.atan2(dir.Y, dir.X) + math.pi/2
+                    e.tracer.Size = UDim2.new(0, 1, 0, len)
+                    e.tracer.Position = UDim2.new(0, origin.X, 0, origin.Y)
+                    e.tracer.Rotation = math.deg(ang)
+                    e.tracer.Visible = true
+                else
+                    e.tracer.Visible = false
+                end
+            else
+                e.tracer.Visible = false
+            end
+        end
+    end
+end
+RunService.RenderStepped:Connect(function()
+    if ESP.enabled then updateESP() end
+end)
+
+-- ============ SPECTATE ============
+function stopSpectate()
+    if not Spectate.active then return end
+    Spectate.active=false; Spectate.target=nil; Spectate.smoothPos=nil; Spectate.smoothLook=nil
+    local cam = workspace.CurrentCamera; if cam then cam.CameraType=Enum.CameraType.Custom end
+    local c = player.Character; local r = c and c:FindFirstChild("HumanoidRootPart")
+    if r then r.Anchored=false end
+    task.defer(function() applyWalkSpeed(); applyJumpPower() end)
+    refreshSpectateUI(); notify("Exited spectator", Theme.textDim)
+end
+local function startSpectate(tp)
+    if not tp then return end
+    if tp==player then notify("Cannot spectate yourself", Theme.warn); return end
+    if Spectate.active then stopSpectate() end
+    if Freecam.active then stopFreecam() end
+    local tc = tp.Character; if not tc then notify("Target has no character",Theme.warn); return end
+    local tr = tc:FindFirstChild("HumanoidRootPart"); if not tr then notify("Target missing root",Theme.warn); return end
+    if Settings.flying then stopFly() end
+    local mc = player.Character; local mr = mc and mc:FindFirstChild("HumanoidRootPart")
+    if mr then mr.Anchored = true end
+    Spectate.active=true; Spectate.target=tp; Spectate.smoothPos=nil; Spectate.smoothLook=nil
+    local cam = workspace.CurrentCamera; if cam then cam.CameraType=Enum.CameraType.Scriptable end
+    refreshSpectateUI(); notify("Spectating "..tp.DisplayName, Theme.accent)
+end
+
+-- ============ FREECAM ============
+local function getPlayerControls()
+    if Freecam.controls then return Freecam.controls end
+    local ok, m = pcall(function() return require(player.PlayerScripts:WaitForChild("PlayerModule",5)) end)
+    if not ok or not m then return nil end
+    local ok2, c = pcall(function() return m:GetControls() end)
+    if not ok2 or not c then return nil end
+    Freecam.controls = c; return c
+end
+local function freezeCharacter()
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid"); local r = c:FindFirstChild("HumanoidRootPart")
+    if h then
+        Freecam.savedWalkSpeed = h.WalkSpeed; Freecam.savedJumpPower = h.JumpPower
+        h.WalkSpeed=0; h.JumpPower=0; h.JumpHeight=0
+    end
+    if r then r.Anchored = true end
+    local ct = getPlayerControls(); if ct then pcall(function() ct:Disable() end) end
+end
+local function unfreezeCharacter()
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid"); local r = c:FindFirstChild("HumanoidRootPart")
+    if h then
+        h.WalkSpeed = Freecam.savedWalkSpeed or 16
+        h.JumpPower = Freecam.savedJumpPower or 50
+        h.JumpHeight = 7.2
+    end
+    if r then r.Anchored = false end
+    local ct = Freecam.controls; if ct then pcall(function() ct:Enable() end) end
+end
+local function startFreecam()
+    if Freecam.active then return end
+    local cam = workspace.CurrentCamera; if not cam then return end
+    if Settings.flying then stopFly() end
+    if Spectate.active then stopSpectate() end
+    Freecam.active = true; Freecam.cframe = cam.CFrame
+    local look = cam.CFrame.LookVector
+    Freecam.yaw = math.atan2(-look.X, -look.Z)
+    Freecam.pitch = math.asin(math.clamp(look.Y, -1, 1))
+    freezeCharacter(); cam.CameraType = Enum.CameraType.Scriptable
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    notify("Freecam enabled", Theme.accent); updateUI(); updateTabIndicators()
+end
+function stopFreecam()
+    if not Freecam.active then return end
+    Freecam.active = false
+    local cam = workspace.CurrentCamera; if cam then cam.CameraType = Enum.CameraType.Custom end
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    unfreezeCharacter()
+    task.defer(function() applyWalkSpeed(); applyJumpPower() end)
+    notify("Freecam disabled", Theme.danger); updateUI(); updateTabIndicators()
+end
+
+-- ============ SERVER HOP ============
+local function serverHop()
+    notify("Finding a new server...", Theme.accent)
+    local ok, result = pcall(function()
+        local url = "https://games.roblox.com/v1/games/"..tostring(game.PlaceId).."/servers/Public?sortOrder=Asc&limit=100"
+        return HttpService:JSONDecode(game:HttpGet(url))
+    end)
+    if not ok or not result or not result.data then notify("Server hop failed",Theme.danger); return end
+    local cand = {}
+    for _,s in ipairs(result.data) do
+        if type(s)=="table" and s.id and s.id~=game.JobId and (s.playing or 0)<(s.maxPlayers or 0) then
+            table.insert(cand, s)
+        end
+    end
+    if #cand==0 then notify("No other servers available", Theme.warn); return end
+    local chosen = cand[math.random(1,#cand)]
+    notify("Hopping...", Theme.accent); task.wait(0.4)
+    TeleportService:TeleportToPlaceInstance(game.PlaceId, chosen.id, player)
+end
+
+-- ============ KEY CONFLICTS ============
+local function keyConflicts(key, exclude)
+    if exclude~="ui" and Settings.uiKey==key then return true end
+    if exclude~="fly" and Settings.toggleKey==key then return true end
+    if exclude~="fc" and Freecam.keybind==key then return true end
+    if exclude~="ws" and Settings.walkSpeedKey==key then return true end
+    if exclude~="nc" and Settings.noclipKey==key then return true end
+    if exclude~="pt" and Settings.potatoKey==key then return true end
+    return false
+end
+
+-- ============ APPLY THEME ============
+function applyTheme(name)
+    local preset = THEME_PRESETS[name]; if not preset then return end
+    for k,v in pairs(preset) do
+        if k ~= "label" and k ~= "swatch" and k ~= "mango" then Theme[k] = v end
+    end
+    Theme.mango = preset.mango == true
+    Settings.themeName = name
+    applyThemeToDescendants()
+    if ui.mangoBg then ui.mangoBg.Visible = Theme.mango end
+    if ui.swatches then
+        for n,sw in pairs(ui.swatches) do
+            if n==ESP.colorName then sw.stroke.Color=Theme.accent; sw.stroke.Thickness=3
+            else sw.stroke.Color=Color3.fromRGB(0,0,0); sw.stroke.Thickness=1 end
+        end
+    end
+    if ui.themeSwatches then
+        for n,sw in pairs(ui.themeSwatches) do
+            if n==name then sw.stroke.Color=Theme.accent; sw.stroke.Thickness=3
+            else sw.stroke.Color=Theme.border; sw.stroke.Thickness=1 end
+        end
+    end
+    if ui.allSliders then
+        for _, sl in ipairs(ui.allSliders) do
+            sl.setFillColor(Theme.accent)
+            sl.applyThemeKnob()
+        end
+    end
+    updateUI()
+    updateTabIndicators()
+    if refreshSpectateUI then refreshSpectateUI() end
+end
+
+-- ============ CAMERA LOOPS ============
+RunService.RenderStepped:Connect(function(dt)
+    if not Spectate.active or not Spectate.target then return end
+    if Freecam.active then return end
+    local tp = Spectate.target
+    if not tp.Parent then stopSpectate(); return end
+    local tc = tp.Character; if not tc then return end
+    local tr = tc:FindFirstChild("HumanoidRootPart"); if not tr then return end
+    local cam = workspace.CurrentCamera; if not cam then return end
+    if cam.CameraType ~= Enum.CameraType.Scriptable then cam.CameraType = Enum.CameraType.Scriptable end
+    local rp = tr.Position; local rcf = tr.CFrame
+    local look = rcf.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude < 0.001 then flat = Vector3.new(0,0,-1) else flat = flat.Unit end
+    local dp = rp - flat*Settings.spectateZoom + Vector3.new(0,6,0)
+    local dl = rp + Vector3.new(0,2.2,0)
+    if not Spectate.smoothPos then Spectate.smoothPos=dp; Spectate.smoothLook=dl end
+    local a = 1 - math.exp(-12*dt)
+    Spectate.smoothPos = Spectate.smoothPos:Lerp(dp, a)
+    Spectate.smoothLook = Spectate.smoothLook:Lerp(dl, a)
+    cam.CFrame = CFrame.lookAt(Spectate.smoothPos, Spectate.smoothLook)
+end)
+RunService.Heartbeat:Connect(function()
+    if not Freecam.active then return end
+    local c = player.Character; if not c then return end
+    local r = c:FindFirstChild("HumanoidRootPart")
+    if r and not r.Anchored then r.Anchored = true end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    if h then
+        if h.WalkSpeed~=0 then h.WalkSpeed=0 end
+        if h.JumpPower~=0 then h.JumpPower=0 end
+    end
+end)
+RunService.RenderStepped:Connect(function(dt)
+    if not Freecam.active then return end
+    if isTyping() then return end
+    local cam = workspace.CurrentCamera; if not cam then return end
+    if cam.CameraType ~= Enum.CameraType.Scriptable then cam.CameraType = Enum.CameraType.Scriptable end
+    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local d = UserInputService:GetMouseDelta()
+        Freecam.yaw = Freecam.yaw - d.X*0.005
+        Freecam.pitch = math.clamp(Freecam.pitch - d.Y*0.005, -math.rad(89), math.rad(89))
+    end
+    local rot = CFrame.fromEulerAnglesYXZ(Freecam.pitch, Freecam.yaw, 0)
+    local mv = Vector3.new(0,0,0)
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv = mv + rot.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv = mv - rot.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv = mv + rot.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv = mv - rot.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then mv = mv + Vector3.new(0,1,0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+        mv = mv - Vector3.new(0,1,0)
+    end
+    local np = Freecam.cframe.Position
+    if mv.Magnitude > 0.001 then np = np + mv.Unit * Freecam.speed * dt end
+    Freecam.cframe = CFrame.new(np) * rot
+    cam.CFrame = Freecam.cframe
+end)
+UserInputService.InputBegan:Connect(function(input)
+    if not Freecam.active then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if Freecam.active then UserInputService.MouseBehavior = Enum.MouseBehavior.Default end
+    end
+end)
+
+-- ============ UI STATE ============
+function updateUI()
+    local function paintBtn(btn, on, onText, offText)
+        if not btn or not btn.label then return end
+        btn.btn:SetAttribute("ToggledOn", on and true or false)
+        if on then
+            btn.label.Text = onText
+            btn.label.TextColor3 = Color3.fromRGB(255,255,255)
+            TweenService:Create(btn.btn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.accent}):Play()
+            TweenService:Create(btn.stroke, TweenInfo.new(0.2), {Color = Theme.accent}):Play()
+        else
+            btn.label.Text = offText
+            btn.label.TextColor3 = Theme.textDim
+            TweenService:Create(btn.btn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.surface2}):Play()
+            TweenService:Create(btn.stroke, TweenInfo.new(0.2), {Color = Theme.border}):Play()
+        end
+    end
+    paintBtn(ui.flyBtn, Settings.flying, "DISABLE FLY", "ENABLE FLY")
+    paintBtn(ui.espBtn, ESP.enabled, "DISABLE ESP", "ENABLE ESP")
+    paintBtn(ui.freecamBtn, Freecam.active, "DISABLE FREECAM", "ENABLE FREECAM")
+    paintBtn(ui.notifBtn, Settings.notifications, "NOTIFS: ON", "NOTIFS: OFF")
+    paintBtn(ui.clockBtn, Settings.clockEnabled, "CLOCK: ON", "CLOCK: OFF")
+    paintBtn(ui.tracerBtn, Settings.tracers, "TRACERS: ON", "TRACERS: OFF")
+    paintBtn(ui.fullbrightBtn, Settings.fullbright, "FULLBRIGHT: ON", "FULLBRIGHT: OFF")
+    paintBtn(ui.infJumpBtn, Settings.infiniteJump, "INFINITE JUMP: ON", "INFINITE JUMP: OFF")
+    paintBtn(ui.walkSpeedToggleBtn, Settings.walkSpeedEnabled, "WALK SPEED: ON", "WALK SPEED: OFF")
+    paintBtn(ui.jumpPowerToggleBtn, Settings.jumpPowerEnabled, "JUMP POWER: ON", "JUMP POWER: OFF")
+    paintBtn(ui.noclipBtn, Settings.noclip, "NOCLIP: ON", "NOCLIP: OFF")
+    paintBtn(ui.potatoBtn, Settings.potato, "POTATO GRAPHICS: ON", "POTATO GRAPHICS: OFF")
+    paintBtn(ui.infiniteZoomBtn, Settings.infiniteZoom, "INFINITE ZOOM: ON", "INFINITE ZOOM: OFF")
+    paintBtn(ui.espNamesBtn, Settings.espNames, "NAMES: ON", "NAMES: OFF")
+    paintBtn(ui.clickTeleportBtn, Settings.clickTeleport, "CLICK TELEPORT: ON", "CLICK TELEPORT: OFF")
+end
+
+function updateTabIndicators()
+    if not ui.tabButtons then return end
+    local visualsActive = Settings.fullbright or Settings.potato
+    local movementActive = Settings.infiniteJump or Settings.walkSpeedEnabled or Settings.jumpPowerEnabled or Settings.noclip
+    local viewActive = Freecam.active or Settings.infiniteZoom
+    local toolsActive = Settings.clickTeleport
+    local states = {
+        FLY=Settings.flying, MOVEMENT=movementActive, ESP=ESP.enabled,
+        VISUALS=visualsActive, VIEW=viewActive, TOOLS=toolsActive,
+        SERVER=false, SETTINGS=false,
+    }
+    for name, active in pairs(states) do
+        local d = ui.tabButtons[name]
+        if d and d.dot then
+            if active then
+                d.dot.BackgroundColor3 = Theme.accent
+                TweenService:Create(d.dot, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
+            else
+                TweenService:Create(d.dot, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+            end
+        end
+    end
+end
+
+function switchTab(name)
+    local prev = currentTab
+    currentTab = name
+    if not ui.tabFrames then return end
+    for tn, f in pairs(ui.tabFrames) do
+        if f then f.Visible = (tn==name) end
+    end
+    if ui.tabButtons then
+        for tn, d in pairs(ui.tabButtons) do
+            if d.label then
+                if tn == name then
+                    d.label.TextColor3 = Theme.text
+                else
+                    d.label.TextColor3 = Theme.textDim
+                end
+            end
+            if d.underline then
+                TweenService:Create(d.underline, TweenInfo.new(0.18),
+                    {BackgroundTransparency = (tn==name) and 0 or 1}):Play()
+            end
+        end
+    end
+    local newFrame = ui.tabFrames[name]
+    if newFrame and prev ~= name then
+        local targetPos = UDim2.new(0, 0, 0, 0)
+        newFrame.Position = UDim2.new(0, 8, 0, 0)
+        newFrame.BackgroundTransparency = 1
+        TweenService:Create(newFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            {Position = targetPos}):Play()
+    end
+    if name=="ESP" then rebuildPlayerList() end
+    if name=="SERVER" and ui.serverPlayersValue then
+        ui.serverPlayersValue.Text = #Players:GetPlayers().." / "..Players.MaxPlayers
+    end
+end
+
+-- ============ PLAYER LIST ============
+function refreshRowCheckmark(plr)
+    if not ui.playerListScroll then return end
+    local row = ui.playerListScroll:FindFirstChild("Row_"..plr.Name)
+    if row then
+        local cb = row:FindFirstChild("Checkbox")
+        if cb then
+            local f = cb:FindFirstChild("Check")
+            if f then f.Visible = ESP.selected[plr]==true end
+        end
+    end
+end
+
+function createPlayerRow(plr)
+    if not ui.playerListScroll then return end
+    local row = Instance.new("TextButton")
+    row.Name = "Row_"..plr.Name
+    row.Size = UDim2.new(1,0,0,46); row.BackgroundColor3 = Theme.surface2
+    row.BorderSizePixel=0; row.Text=""; row.AutoButtonColor=false; row.Parent = ui.playerListScroll
+    tagBg(row,"surface2")
+    local rc = Instance.new("UICorner"); rc.CornerRadius=UDim.new(0,8); rc.Parent=row
+    local rs = Instance.new("UIStroke"); rs.Thickness=1; rs.Color=Theme.border; rs.Transparency=1; rs.Parent=row
+    local cb = Instance.new("Frame")
+    cb.Name="Checkbox"; cb.Size=UDim2.new(0,18,0,18); cb.Position=UDim2.new(0,12,0.5,-9)
+    cb.BackgroundColor3=Theme.bg; cb.BorderSizePixel=0; cb.Parent=row
+    tagBg(cb,"bg")
+    local cbc = Instance.new("UICorner"); cbc.CornerRadius=UDim.new(0,5); cbc.Parent=cb
+    local cbs = Instance.new("UIStroke"); cbs.Thickness=1; cbs.Color=Theme.border; cbs.Parent=cb
+    tagStroke(cbs,"border")
+    local ck = Instance.new("Frame")
+    ck.Name="Check"; ck.Size=UDim2.new(0,10,0,10); ck.Position=UDim2.new(0.5,-5,0.5,-5)
+    ck.BackgroundColor3=Theme.accent; ck.BorderSizePixel=0
+    ck.Visible = ESP.selected[plr]==true; ck.Parent=cb
+    local ckc = Instance.new("UICorner"); ckc.CornerRadius=UDim.new(0,3); ckc.Parent=ck
+    local nl = Instance.new("TextLabel")
+    nl.Size=UDim2.new(1,-180,0,17); nl.Position=UDim2.new(0,42,0,7)
+    nl.BackgroundTransparency=1; nl.Text=plr.DisplayName; nl.TextColor3=Theme.text; nl.TextSize=14
+    nl.Font=Enum.Font.GothamMedium; nl.TextXAlignment=Enum.TextXAlignment.Left
+    nl.TextTruncate=Enum.TextTruncate.AtEnd; nl.Parent=row
+    tagText(nl,"text")
+    local tl = Instance.new("TextLabel")
+    tl.Size=UDim2.new(1,-180,0,14); tl.Position=UDim2.new(0,42,0,24)
+    tl.BackgroundTransparency=1; tl.Text="@"..plr.Name; tl.TextColor3=Theme.textMute
+    tl.TextSize=12; tl.Font=Enum.Font.GothamMedium; tl.TextXAlignment=Enum.TextXAlignment.Left
+    tl.TextTruncate=Enum.TextTruncate.AtEnd; tl.Parent=row
+    tagText(tl,"textMute")
+    local sb = Instance.new("TextButton")
+    sb.Name="SpectateButton"; sb.Size=UDim2.new(0,92,0,30); sb.Position=UDim2.new(1,-130,0.5,-15)
+    sb.BackgroundColor3=Theme.surface3; sb.Text=""; sb.AutoButtonColor=false
+    sb.BorderSizePixel=0; sb.Parent=row
+    tagBg(sb,"surface3")
+    local sbc = Instance.new("UICorner"); sbc.CornerRadius=UDim.new(0,6); sbc.Parent=sb
+    local sbs = Instance.new("UIStroke"); sbs.Thickness=1; sbs.Color=Theme.border; sbs.Parent=sb
+    tagStroke(sbs,"border")
+    local sbl = Instance.new("TextLabel")
+    sbl.Size=UDim2.new(1,0,1,0); sbl.BackgroundTransparency=1; sbl.Text="SPECTATE"
+    sbl.TextColor3=Theme.accent; sbl.TextSize=11; sbl.Font=Enum.Font.GothamBold
+    sbl.Active=false; sbl.Parent=sb
+    tagText(sbl,"accent")
+    local xb = Instance.new("TextButton")
+    xb.Name="StopSpectateButton"; xb.Size=UDim2.new(0,30,0,30); xb.Position=UDim2.new(1,-34,0.5,-15)
+    xb.BackgroundColor3=Color3.fromRGB(40,16,18); xb.Text="×"; xb.TextColor3=Theme.danger
+    xb.TextSize=22; xb.Font=Enum.Font.GothamBold; xb.BorderSizePixel=0
+    xb.AutoButtonColor=false; xb.Visible=false; xb.Parent=row
+    local xc = Instance.new("UICorner"); xc.CornerRadius=UDim.new(0,6); xc.Parent=xb
+    local xs = Instance.new("UIStroke"); xs.Thickness=1; xs.Color=Theme.danger; xs.Parent=xb
+    row.MouseEnter:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.15), {BackgroundColor3=Theme.surface3}):Play()
+        TweenService:Create(rs, TweenInfo.new(0.15), {Transparency=0}):Play()
+    end)
+    row.MouseLeave:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.15), {BackgroundColor3=Theme.surface2}):Play()
+        TweenService:Create(rs, TweenInfo.new(0.15), {Transparency=1}):Play()
+    end)
+    row.MouseButton1Click:Connect(function()
+        ESP.selected[plr] = not ESP.selected[plr]
+        ck.Visible = ESP.selected[plr]==true
+        if ESP.enabled then
+            if ESP.selected[plr] then createESPForPlayer(plr) else removeESPForPlayer(plr) end
+        end
+    end)
+    sb.MouseButton1Click:Connect(function() startSpectate(plr) end)
+    xb.MouseButton1Click:Connect(function() stopSpectate() end)
+end
+
+function rebuildPlayerList()
+    if not ui.playerListScroll then return end
+    for _, ch in ipairs(ui.playerListScroll:GetChildren()) do
+        if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
+    end
+    local q = string.lower(Settings.searchText or "")
+    local count = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player then
+            local match
+            if q=="" then match=true
+            else
+                match = string.find(string.lower(plr.Name), q, 1, true) ~= nil
+                     or string.find(string.lower(plr.DisplayName), q, 1, true) ~= nil
+            end
+            if match then createPlayerRow(plr); count = count + 1 end
+        end
+    end
+    if ui.playerCount then
+        local total = #Players:GetPlayers()-1
+        if q=="" then ui.playerCount.Text = "PLAYERS ("..count..")"
+        else ui.playerCount.Text = "PLAYERS ("..count.." / "..total..")" end
+    end
+    if ui.serverPlayersValue then
+        ui.serverPlayersValue.Text = #Players:GetPlayers().." / "..Players.MaxPlayers
+    end
+    refreshSpectateUI()
+end
+
+function refreshSpectateUI()
+    if ui.playerListScroll then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            local row = ui.playerListScroll:FindFirstChild("Row_"..plr.Name)
+            if row then
+                local xb = row:FindFirstChild("StopSpectateButton")
+                if xb then xb.Visible = (Spectate.active and Spectate.target==plr) end
+            end
+        end
+    end
+    if ui.specStatus then
+        if Spectate.active and Spectate.target then
+            ui.specStatus.Text = "Spectating: "..Spectate.target.DisplayName
+            ui.specStatus.TextColor3 = Theme.accent
+        else
+            ui.specStatus.Text = "Not spectating"
+            ui.specStatus.TextColor3 = Theme.textMute
+        end
+    end
+end
+
+-- ============ CLOCK ============
+local function createClock(sg)
+    local cf = Instance.new("Frame")
+    cf.Name="Clock"; cf.Size=UDim2.new(0,150,0,42); cf.Position=UDim2.new(1,-170,0,22)
+    cf.BackgroundColor3=Theme.bg; cf.BackgroundTransparency=0.08
+    cf.BorderSizePixel=0; cf.Visible=false; cf.Active=true; cf.Parent=sg
+    tagBg(cf,"bg")
+    local c = Instance.new("UICorner"); c.CornerRadius=UDim.new(0,10); c.Parent=cf
+    local s = Instance.new("UIStroke"); s.Thickness=1; s.Color=Theme.border; s.Parent=cf
+    tagStroke(s,"border")
+    local l = Instance.new("TextLabel")
+    l.Name="ClockLabel"; l.Size=UDim2.new(1,-12,1,0); l.Position=UDim2.new(0,6,0,0)
+    l.BackgroundTransparency=1; l.Text=format12h(); l.TextColor3=Theme.text; l.TextSize=18
+    l.Font=Enum.Font.GothamBold; l.TextXAlignment=Enum.TextXAlignment.Center
+    l.Parent=cf
+    tagText(l,"text")
+    ui.clockFrame = cf; ui.clockLabel = l
+    local dragging = false; local ds, sp
+    cf.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging=true; ds=i.Position; sp=cf.Position end
+    end)
+    cf.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging=false end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local d = i.Position - ds
+            cf.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+    return cf
+end
+
+-- ============ CREATE UI ============
+local function createUI()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "FlyHacksUI"; sg.ResetOnSpawn = false; sg.Parent = player.PlayerGui
+
+    tracerContainer = Instance.new("Frame")
+    tracerContainer.Name = "TracerContainer"; tracerContainer.Size = UDim2.new(1,0,1,0)
+    tracerContainer.BackgroundTransparency = 1; tracerContainer.ZIndex = 0
+    tracerContainer.Active = false; tracerContainer.Parent = sg
+
+    ensureNotifContainer()
+    createClock(sg)
+
+    guiFrame = Instance.new("Frame")
+    guiFrame.Name="Main"; guiFrame.Size=UDim2.new(0,520,0,620)
+    guiFrame.Position=UDim2.new(0.5,-260,0.5,-310); guiFrame.BackgroundColor3=Theme.bg
+    guiFrame.BorderSizePixel=0; guiFrame.Visible=false
+    guiFrame.Active = false
+    guiFrame.ClipsDescendants = true; guiFrame.Parent=sg
+    tagBg(guiFrame,"bg")
+    local mc = Instance.new("UICorner"); mc.CornerRadius=UDim.new(0,14); mc.Parent=guiFrame
+    local ms = Instance.new("UIStroke"); ms.Thickness=1; ms.Color=Theme.border; ms.Parent=guiFrame
+    tagStroke(ms,"border")
+    ui.uiScale = Instance.new("UIScale"); ui.uiScale.Scale = Settings.uiScale; ui.uiScale.Parent = guiFrame
+
+    local mangoBg = Instance.new("TextLabel")
+    mangoBg.Name = "MangoBg"
+    mangoBg.Size = UDim2.new(10, 0, 10, 0)
+    mangoBg.Position = UDim2.new(-4.5, 0, -4.5, 0)
+    mangoBg.BackgroundTransparency = 1
+    mangoBg.Text = "🥭"
+    mangoBg.TextScaled = true
+    mangoBg.Font = Enum.Font.GothamBold
+    mangoBg.TextColor3 = Color3.fromRGB(255, 90, 0)
+    mangoBg.TextTransparency = 0.15
+    mangoBg.TextStrokeTransparency = 0.5
+    mangoBg.TextStrokeColor3 = Color3.fromRGB(80, 30, 0)
+    mangoBg.TextXAlignment = Enum.TextXAlignment.Center
+    mangoBg.TextYAlignment = Enum.TextYAlignment.Center
+    mangoBg.Visible = false
+    mangoBg.ZIndex = 1
+    mangoBg.Active = false
+    mangoBg.Parent = guiFrame
+    local mbSize = Instance.new("UITextSizeConstraint")
+    mbSize.MaxTextSize = 5000
+    mbSize.MinTextSize = 100
+    mbSize.Parent = mangoBg
+    ui.mangoBg = mangoBg
+
+    -- HEADER (only draggable)
+    header = Instance.new("Frame")
+    header.Name="Header"; header.Size=UDim2.new(1,0,0,58); header.BackgroundTransparency=1
+    header.Active=true; header.Parent=guiFrame; header.ZIndex = 3
+
+    do
+        local dragging = false
+        local dragStart, startPos
+        header.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+               or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = guiFrame.Position
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if not dragging then return end
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+               or input.UserInputType == Enum.UserInputType.Touch then
+                local delta = input.Position - dragStart
+                guiFrame.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+               or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+    end
+
+    local title = Instance.new("TextLabel")
+    title.Size=UDim2.new(1,-80,0,22); title.Position=UDim2.new(0,22,0,12)
+    title.BackgroundTransparency=1; title.Text="FlyHacks"; title.TextColor3=Theme.text
+    title.TextSize=19; title.Font=Enum.Font.GothamBold; title.TextXAlignment=Enum.TextXAlignment.Left
+    title.Parent=header; title.ZIndex = 3; title.Active = false; tagText(title,"text")
+    local sub = Instance.new("TextLabel")
+    sub.Size=UDim2.new(1,-80,0,16); sub.Position=UDim2.new(0,22,0,34)
+    sub.BackgroundTransparency=1; sub.Text="Utility suite"; sub.TextColor3=Theme.textMute
+    sub.TextSize=12; sub.Font=Enum.Font.GothamMedium
+    sub.TextXAlignment=Enum.TextXAlignment.Left; sub.Parent=header
+    sub.ZIndex = 3; sub.Active = false; tagText(sub,"textMute")
+    local grip = Instance.new("Frame")
+    grip.Name = "DragGrip"; grip.Size = UDim2.new(0, 40, 0, 4); grip.Position = UDim2.new(0.5, -20, 0, 6)
+    grip.BackgroundColor3 = Theme.textMute; grip.BorderSizePixel = 0; grip.Parent = header; grip.ZIndex = 3
+    tagBg(grip,"textMute")
+    local gripC = Instance.new("UICorner"); gripC.CornerRadius = UDim.new(1,0); gripC.Parent = grip
+    local cb = Instance.new("TextButton")
+    cb.Size=UDim2.new(0,26,0,26); cb.Position=UDim2.new(1,-36,0,16)
+    cb.BackgroundColor3=Theme.surface2; cb.Text="×"; cb.TextColor3=Theme.textDim
+    cb.TextSize=18; cb.Font=Enum.Font.GothamBold; cb.AutoButtonColor=false
+    cb.BorderSizePixel=0; cb.Parent=header; cb.ZIndex = 3
+    tagBg(cb,"surface2"); tagText(cb,"textDim")
+    local cbc = Instance.new("UICorner"); cbc.CornerRadius=UDim.new(0,6); cbc.Parent=cb
+    cb.MouseEnter:Connect(function()
+        TweenService:Create(cb, TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(60,20,24)}):Play()
+        cb.TextColor3 = Theme.danger
+    end)
+    cb.MouseLeave:Connect(function()
+        TweenService:Create(cb, TweenInfo.new(0.15), {BackgroundColor3=Theme.surface2}):Play()
+        cb.TextColor3 = Theme.textDim
+    end)
+    cb.MouseButton1Click:Connect(function()
+        guiFrame.Visible = false; Settings.guiOpen = false
+    end)
+    makeDivider(guiFrame, 58, 0)
+
+    -- TAB BAR
+    local tabBar = Instance.new("Frame")
+    tabBar.Size=UDim2.new(1,0,0,42); tabBar.Position=UDim2.new(0,0,0,59)
+    tabBar.BackgroundTransparency=1; tabBar.Parent=guiFrame; tabBar.ZIndex = 3
+    ui.tabButtons = {}; ui.tabFrames = {}
+    local tabDefs = {
+        {name="FLY", label="Fly"}, {name="MOVEMENT", label="Move"}, {name="ESP", label="ESP"},
+        {name="VISUALS", label="Visuals"}, {name="VIEW", label="View"}, {name="TOOLS", label="Tools"},
+        {name="SERVER", label="Server"}, {name="SETTINGS", label="Settings"},
+    }
+    local tw = 1 / #tabDefs
+    for i, def in ipairs(tabDefs) do
+        local tb = Instance.new("TextButton")
+        tb.Size=UDim2.new(tw,0,1,0); tb.Position=UDim2.new(tw*(i-1),0,0,0)
+        tb.BackgroundTransparency=1; tb.Text=""; tb.AutoButtonColor=false
+        tb.Parent=tabBar; tb.ZIndex = 3
+        local l = Instance.new("TextLabel")
+        l.Size=UDim2.new(1,0,1,-4); l.BackgroundTransparency=1; l.Text=def.label
+        l.TextColor3=Theme.textDim; l.TextSize=11; l.Font=Enum.Font.GothamMedium
+        l.Parent=tb; l.ZIndex = 3; l.Active = false; tagText(l,"textDim")
+        local ul = Instance.new("Frame")
+        ul.Size=UDim2.new(0.5,0,0,2); ul.Position=UDim2.new(0.25,0,1,-3)
+        ul.BackgroundColor3=Theme.text; ul.BackgroundTransparency=1; ul.BorderSizePixel=0
+        ul.Parent=tb; ul.ZIndex = 3
+        local ulc = Instance.new("UICorner"); ulc.CornerRadius=UDim.new(1,0); ulc.Parent=ul
+        local dot = Instance.new("Frame")
+        dot.Size=UDim2.new(0,5,0,5); dot.Position=UDim2.new(1,-9,0.5,-2.5)
+        dot.BackgroundColor3=Theme.text; dot.BackgroundTransparency=1
+        dot.BorderSizePixel=0; dot.Parent=tb; dot.ZIndex = 3
+        local dc = Instance.new("UICorner"); dc.CornerRadius=UDim.new(1,0); dc.Parent=dot
+        tb.MouseButton1Click:Connect(function() switchTab(def.name) end)
+        ui.tabButtons[def.name] = { btn=tb, label=l, underline=ul, dot=dot }
+    end
+    makeDivider(guiFrame, 101, 0)
+
+    local content = Instance.new("Frame")
+    content.Name="Content"; content.Size=UDim2.new(1,0,1,-102)
+    content.Position=UDim2.new(0,0,0,102); content.BackgroundTransparency=1
+    content.ClipsDescendants = true
+    content.Parent=guiFrame; content.ZIndex = 2
+
+    -- FLY TAB
+    local flyFrame = Instance.new("Frame")
+    flyFrame.Name="FLY"; flyFrame.Size=UDim2.new(1,0,1,0); flyFrame.BackgroundTransparency=1
+    flyFrame.Visible=false; flyFrame.Parent=content
+    ui.tabFrames["FLY"] = flyFrame
+    ui.flyBtn = makeButton(flyFrame, {size=UDim2.new(1,-PAD*2,0,52), pos=UDim2.new(0,PAD,0,16),
+        text="ENABLE FLY", textColor=Theme.textDim, textSize=16, font=Enum.Font.GothamBold, radius=10})
+    ui.flyBtn.btn.MouseButton1Click:Connect(function()
+        if Settings.flying then stopFly() else startFly() end
+        pulseButton(ui.flyBtn)
+    end)
+    ui.flySlider = createSlider(flyFrame, {pos=UDim2.new(0,PAD,0,84), size=UDim2.new(1,-PAD*2,0,44),
+        label="Fly Speed", initial=Settings.flySpeed, min=Settings.minSpeed, max=Settings.maxSpeed,
+        onChange=function(v) Settings.flySpeed=v end})
+    makeDivider(flyFrame, 148, PAD)
+    local fkr = makeInfoRow(flyFrame, 164, "Toggle key",
+        tostring(Settings.toggleKey):gsub("Enum.KeyCode.",""), PAD)
+    ui.flyKeyValue = fkr.value
+    ui.flyKeyBtn = makeButton(flyFrame, {size=UDim2.new(1,-PAD*2,0,42), pos=UDim2.new(0,PAD,0,204),
+        text="CHANGE KEYBIND", textColor=Theme.text, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    makeLabel(flyFrame, {text="Space = up  ·  Ctrl = down  ·  WASD = move",
+        size=12, color=Theme.textMute, pos=UDim2.new(0,PAD,0,258),
+        sizeUDim=UDim2.new(1,-PAD*2,0,20)})
+
+    -- MOVEMENT TAB
+    local moveFrame = Instance.new("Frame")
+    moveFrame.Name="MOVEMENT"; moveFrame.Size=UDim2.new(1,0,1,0); moveFrame.BackgroundTransparency=1
+    moveFrame.Visible=false; moveFrame.Parent=content
+    ui.tabFrames["MOVEMENT"] = moveFrame
+    makeLabel(moveFrame, {text="Walk Speed", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,8), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.walkSpeedToggleBtn = makeButton(moveFrame, {
+        size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,26),
+        text="WALK SPEED: OFF", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.walkSpeedToggleBtn.btn.MouseButton1Click:Connect(function()
+        setWalkSpeedEnabled(not Settings.walkSpeedEnabled)
+        pulseButton(ui.walkSpeedToggleBtn)
+        notify(Settings.walkSpeedEnabled and "Walk speed on" or "Walk speed off",
+               Settings.walkSpeedEnabled and Theme.accent or Theme.danger)
+    end)
+    ui.walkSpeedSlider = createSlider(moveFrame, {
+        pos=UDim2.new(0,PAD,0,64), size=UDim2.new(1,-PAD*2,0,40),
+        label="Speed", initial=Settings.walkSpeed, min=0, max=500,
+        formatter=function(v) return v .. " studs/s" end,
+        onChange=function(v) Settings.walkSpeed = v; applyWalkSpeed(); updateTabIndicators() end})
+    local wsKeyRow = makeInfoRow(moveFrame, 108, "Speed keybind",
+        tostring(Settings.walkSpeedKey):gsub("Enum.KeyCode.",""), PAD)
+    ui.walkSpeedKeyValue = wsKeyRow.value
+    ui.walkSpeedKeyBtn = makeButton(moveFrame, {
+        size=UDim2.new(1,-PAD*2,0,32), pos=UDim2.new(0,PAD,0,146),
+        text="CHANGE KEYBIND", textColor=Theme.text, textSize=12, font=Enum.Font.GothamBold, radius=8})
+    makeDivider(moveFrame, 188, PAD)
+    makeLabel(moveFrame, {text="Jump", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,196), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.jumpPowerToggleBtn = makeButton(moveFrame, {
+        size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,214),
+        text="JUMP POWER: OFF", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.jumpPowerToggleBtn.btn.MouseButton1Click:Connect(function()
+        setJumpPowerEnabled(not Settings.jumpPowerEnabled)
+        pulseButton(ui.jumpPowerToggleBtn)
+        notify(Settings.jumpPowerEnabled and "Jump power on" or "Jump power off",
+               Settings.jumpPowerEnabled and Theme.accent or Theme.danger)
+    end)
+    ui.jumpPowerSlider = createSlider(moveFrame, {
+        pos=UDim2.new(0,PAD,0,252), size=UDim2.new(1,-PAD*2,0,40),
+        label="Jump Power", initial=Settings.jumpPower, min=0, max=500,
+        formatter=function(v) return v .. " (50 default)" end,
+        onChange=function(v) Settings.jumpPower = v; applyJumpPower(); updateTabIndicators() end})
+    ui.infJumpBtn = makeButton(moveFrame, {
+        size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,296),
+        text="INFINITE JUMP: OFF", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.infJumpBtn.btn.MouseButton1Click:Connect(function()
+        Settings.infiniteJump = not Settings.infiniteJump
+        pulseButton(ui.infJumpBtn)
+        notify(Settings.infiniteJump and "Infinite jump on" or "Infinite jump off",
+               Settings.infiniteJump and Theme.accent or Theme.danger)
+        updateUI(); updateTabIndicators()
+    end)
+    makeDivider(moveFrame, 338, PAD)
+    makeLabel(moveFrame, {text="Noclip", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,346), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.noclipBtn = makeButton(moveFrame, {
+        size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,364),
+        text="NOCLIP: OFF", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.noclipBtn.btn.MouseButton1Click:Connect(function()
+        setNoclip(not Settings.noclip)
+        pulseButton(ui.noclipBtn)
+        notify(Settings.noclip and "Noclip on" or "Noclip off",
+               Settings.noclip and Theme.accent or Theme.danger)
+    end)
+    local ncKeyRow = makeInfoRow(moveFrame, 404, "Noclip keybind",
+        tostring(Settings.noclipKey):gsub("Enum.KeyCode.",""), PAD)
+    ui.noclipKeyValue = ncKeyRow.value
+    ui.noclipKeyBtn = makeButton(moveFrame, {
+        size=UDim2.new(1,-PAD*2,0,32), pos=UDim2.new(0,PAD,0,442),
+        text="CHANGE KEYBIND", textColor=Theme.text, textSize=12, font=Enum.Font.GothamBold, radius=8})
+
+    -- ESP TAB
+    local espFrame = Instance.new("Frame")
+    espFrame.Name="ESP"; espFrame.Size=UDim2.new(1,0,1,0); espFrame.BackgroundTransparency=1
+    espFrame.Visible=false; espFrame.Parent=content
+    ui.tabFrames["ESP"] = espFrame
+    ui.espBtn = makeButton(espFrame, {size=UDim2.new(1,-PAD*2,0,52), pos=UDim2.new(0,PAD,0,16),
+        text="ENABLE ESP", textColor=Theme.textDim, textSize=16, font=Enum.Font.GothamBold, radius=10})
+    ui.espBtn.btn.MouseButton1Click:Connect(function()
+        toggleESP()
+        pulseButton(ui.espBtn)
+    end)
+    ui.tracerBtn = makeButton(espFrame, {size=UDim2.new(1,-PAD*2,0,42), pos=UDim2.new(0,PAD,0,78),
+        text="TRACERS: OFF", textColor=Theme.textDim, textSize=14, font=Enum.Font.GothamBold, radius=8})
+    ui.tracerBtn.btn.MouseButton1Click:Connect(function()
+        Settings.tracers = not Settings.tracers
+        pulseButton(ui.tracerBtn)
+        notify(Settings.tracers and "Tracers on" or "Tracers off",
+               Settings.tracers and Theme.accent or Theme.danger)
+        updateUI()
+    end)
+    ui.espNamesBtn = makeButton(espFrame, {
+        size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,128),
+        text="NAMES: ON", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.espNamesBtn.btn.MouseButton1Click:Connect(function()
+        Settings.espNames = not Settings.espNames
+        for _, e in pairs(ESP.entries) do applyEspNamesToEntry(e) end
+        pulseButton(ui.espNamesBtn)
+        notify(Settings.espNames and "Names shown" or "Names hidden",
+               Settings.espNames and Theme.accent or Theme.danger)
+        updateUI(); updateTabIndicators()
+    end)
+    ui.espScaleSlider = createSlider(espFrame, {
+        pos=UDim2.new(0,PAD,0,170), size=UDim2.new(1,-PAD*2,0,40),
+        label="ESP Scale", initial=math.floor(Settings.espScale * 100), min=30, max=150,
+        formatter=function(v) return v.."%" end,
+        onChange=function(v) Settings.espScale = v / 100; for _, e in pairs(ESP.entries) do applyEspScaleToEntry(e) end end})
+    makeLabel(espFrame, {text="Highlight color", size=12, color=Theme.textMute,
+        pos=UDim2.new(0,PAD,0,218), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    local swRow = Instance.new("Frame")
+    swRow.Size=UDim2.new(1,-PAD*2,0,36); swRow.Position=UDim2.new(0,PAD,0,238)
+    swRow.BackgroundTransparency=1; swRow.Parent=espFrame
+    local sll = Instance.new("UIListLayout"); sll.FillDirection=Enum.FillDirection.Horizontal
+    sll.Padding=UDim.new(0,6); sll.SortOrder=Enum.SortOrder.LayoutOrder; sll.Parent=swRow
+    local swOrder = {"red","green","blue","yellow","purple","white"}
+    local swColors = {
+        red=Color3.fromRGB(255,60,60), green=Color3.fromRGB(60,255,100), blue=Color3.fromRGB(60,150,255),
+        yellow=Color3.fromRGB(255,230,40), purple=Color3.fromRGB(190,100,255), white=Color3.fromRGB(245,245,245)}
+    ui.swatches = {}
+    for _, n in ipairs(swOrder) do
+        -- Black outline wrapper (matches theme swatch style)
+        local wrapper = Instance.new("Frame")
+        wrapper.Name = "ColorWrap_"..n
+        wrapper.Size = UDim2.new(0, 72, 0, 36)
+        wrapper.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        wrapper.BorderSizePixel = 0
+        wrapper.Parent = swRow
+        local wc = Instance.new("UICorner"); wc.CornerRadius = UDim.new(0, 9); wc.Parent = wrapper
+
+        local s = Instance.new("TextButton")
+        s.Name = "Color_"..n
+        s.Size = UDim2.new(1, -4, 1, -4)
+        s.Position = UDim2.new(0, 2, 0, 2)
+        s.BackgroundColor3 = swColors[n]
+        s.Text = ""
+        s.AutoButtonColor = false
+        s.Parent = wrapper
+        local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 7); sc.Parent = s
+        local ss = Instance.new("UIStroke"); ss.Thickness = 2; ss.Color = Theme.border; ss.Parent = s
+        local sps = Instance.new("UIScale"); sps.Scale = 1; sps.Parent = s
+
+        s.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+               or i.UserInputType == Enum.UserInputType.Touch then
+                TweenService:Create(sps, TweenInfo.new(0.08), {Scale = 0.92}):Play()
+            end
+        end)
+        s.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+               or i.UserInputType == Enum.UserInputType.Touch then
+                TweenService:Create(sps, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+            end
+        end)
+        s.MouseEnter:Connect(function()
+            TweenService:Create(sps, TweenInfo.new(0.15), {Scale = 1.06}):Play()
+        end)
+        s.MouseLeave:Connect(function()
+            TweenService:Create(sps, TweenInfo.new(0.15), {Scale = 1}):Play()
+        end)
+        s.MouseButton1Click:Connect(function() setESPColor(n) end)
+        ui.swatches[n] = { btn = s, stroke = ss, wrapper = wrapper }
+    end
+    setESPColor(ESP.colorName)
+    makeDivider(espFrame, 290, PAD)
+    ui.playerCount = makeLabel(espFrame, {text="PLAYERS (0)", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,304), sizeUDim=UDim2.new(0.5,0,0,18)})
+    ui.allBtn = makeButton(espFrame, {size=UDim2.new(0,56,0,26), pos=UDim2.new(1,-PAD-122,0,300),
+        text="ALL", textColor=Theme.accent, textSize=12, font=Enum.Font.GothamBold, radius=6})
+    ui.noneBtn = makeButton(espFrame, {size=UDim2.new(0,56,0,26), pos=UDim2.new(1,-PAD-60,0,300),
+        text="NONE", textColor=Theme.danger, textSize=12, font=Enum.Font.GothamBold, radius=6})
+    ui.allBtn.btn.MouseButton1Click:Connect(function()
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= player then
+                ESP.selected[plr] = true
+                refreshRowCheckmark(plr)
+                if ESP.enabled then createESPForPlayer(plr) end
+            end
+        end
+    end)
+    ui.noneBtn.btn.MouseButton1Click:Connect(function()
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= player then
+                ESP.selected[plr] = false
+                refreshRowCheckmark(plr)
+                removeESPForPlayer(plr)
+            end
+        end
+    end)
+    local search = Instance.new("TextBox")
+    search.Name="SearchBox"; search.Size=UDim2.new(1,-PAD*2,0,32); search.Position=UDim2.new(0,PAD,0,334)
+    search.BackgroundColor3=Theme.surface2; search.BorderSizePixel=0
+    search.Text=Settings.searchText or ""; search.PlaceholderText="Search players..."
+    search.PlaceholderColor3=Theme.textMute; search.TextColor3=Theme.text; search.TextSize=13
+    search.Font=Enum.Font.GothamMedium; search.TextXAlignment=Enum.TextXAlignment.Left
+    search.ClearTextOnFocus=false; search.TextEditable = true; search.Parent=espFrame
+    tagBg(search,"surface2"); tagText(search,"text"); search:SetAttribute("Theme_Placeholder","textMute")
+    local sc2 = Instance.new("UICorner"); sc2.CornerRadius=UDim.new(0,8); sc2.Parent=search
+    local ss2 = Instance.new("UIStroke"); ss2.Thickness=1; ss2.Color=Theme.border; ss2.Parent=search
+    tagStroke(ss2,"border")
+    local sp2 = Instance.new("UIPadding"); sp2.PaddingLeft=UDim.new(0,10); sp2.PaddingRight=UDim.new(0,10); sp2.Parent=search
+    search:GetPropertyChangedSignal("Text"):Connect(function()
+        Settings.searchText = search.Text; rebuildPlayerList()
+    end)
+    ui.searchBox = search
+    ui.playerListScroll = Instance.new("ScrollingFrame")
+    ui.playerListScroll.Name="PlayerList"; ui.playerListScroll.Size=UDim2.new(1,-PAD*2,1,-380)
+    ui.playerListScroll.Position=UDim2.new(0,PAD,0,380); ui.playerListScroll.BackgroundTransparency=1
+    ui.playerListScroll.BorderSizePixel=0; ui.playerListScroll.ScrollBarThickness=4
+    ui.playerListScroll.ScrollBarImageColor3=Theme.border; ui.playerListScroll.CanvasSize=UDim2.new(0,0,0,0)
+    ui.playerListScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y; ui.playerListScroll.Parent=espFrame
+    local ll = Instance.new("UIListLayout"); ll.Padding=UDim.new(0,6)
+    ll.SortOrder=Enum.SortOrder.Name; ll.Parent=ui.playerListScroll
+
+    -- VISUALS TAB
+    local visFrame = Instance.new("Frame")
+    visFrame.Name="VISUALS"; visFrame.Size=UDim2.new(1,0,1,0); visFrame.BackgroundTransparency=1
+    visFrame.Visible=false; visFrame.Parent=content
+    ui.tabFrames["VISUALS"] = visFrame
+    makeLabel(visFrame, {text="World", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,14), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.fullbrightBtn = makeButton(visFrame, {size=UDim2.new(1,-PAD*2,0,42), pos=UDim2.new(0,PAD,0,36),
+        text="FULLBRIGHT: OFF", textColor=Theme.textDim, textSize=14, font=Enum.Font.GothamBold, radius=8})
+    ui.fullbrightBtn.btn.MouseButton1Click:Connect(function()
+        applyFullbright(not Settings.fullbright)
+        pulseButton(ui.fullbrightBtn)
+        notify(Settings.fullbright and "Fullbright on" or "Fullbright off",
+               Settings.fullbright and Theme.accent or Theme.danger)
+        updateUI(); updateTabIndicators()
+    end)
+    makeDivider(visFrame, 90, PAD)
+    makeLabel(visFrame, {text="Performance", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,104), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.potatoBtn = makeButton(visFrame, {size=UDim2.new(1,-PAD*2,0,42), pos=UDim2.new(0,PAD,0,126),
+        text="POTATO GRAPHICS: OFF", textColor=Theme.textDim, textSize=14, font=Enum.Font.GothamBold, radius=8})
+    ui.potatoBtn.btn.MouseButton1Click:Connect(function()
+        local target = not Settings.potato
+        setPotato(target)
+        pulseButton(ui.potatoBtn)
+        notify(target and "Potato graphics on" or "Potato graphics off",
+               target and Theme.accent or Theme.danger)
+    end)
+    local pkRow = makeInfoRow(visFrame, 180, "Potato keybind",
+        tostring(Settings.potatoKey):gsub("Enum.KeyCode.",""), PAD)
+    ui.potatoKeyValue = pkRow.value
+    ui.potatoKeyBtn = makeButton(visFrame, {
+        size=UDim2.new(1,-PAD*2,0,32), pos=UDim2.new(0,PAD,0,218),
+        text="CHANGE KEYBIND", textColor=Theme.text, textSize=12, font=Enum.Font.GothamBold, radius=8})
+    makeLabel(visFrame, {text="Auto-applies to new parts. No reload needed.", size=11,
+        color=Theme.textMute, pos=UDim2.new(0,PAD,0,262), sizeUDim=UDim2.new(1,-PAD*2,0,14)})
+
+    -- VIEW TAB
+    local viewFrame = Instance.new("Frame")
+    viewFrame.Name="VIEW"; viewFrame.Size=UDim2.new(1,0,1,0); viewFrame.BackgroundTransparency=1
+    viewFrame.Visible=false; viewFrame.Parent=content
+    ui.tabFrames["VIEW"] = viewFrame
+    ui.freecamBtn = makeButton(viewFrame, {size=UDim2.new(1,-PAD*2,0,52), pos=UDim2.new(0,PAD,0,16),
+        text="ENABLE FREECAM", textColor=Theme.textDim, textSize=16, font=Enum.Font.GothamBold, radius=10})
+    ui.freecamBtn.btn.MouseButton1Click:Connect(function()
+        if Freecam.active then stopFreecam() else startFreecam() end
+        pulseButton(ui.freecamBtn)
+    end)
+    ui.fcSlider = createSlider(viewFrame, {pos=UDim2.new(0,PAD,0,84), size=UDim2.new(1,-PAD*2,0,44),
+        label="Freecam Speed", initial=Freecam.speed, min=Freecam.minSpeed, max=Freecam.maxSpeed,
+        onChange=function(v) Freecam.speed=v end})
+    makeDivider(viewFrame, 144, PAD)
+    makeLabel(viewFrame, {text="Camera", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,156), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.infiniteZoomBtn = makeButton(viewFrame, {
+        size=UDim2.new(1,-PAD*2,0,46), pos=UDim2.new(0,PAD,0,178),
+        text="INFINITE ZOOM: OFF", textColor=Theme.textDim, textSize=14, font=Enum.Font.GothamBold, radius=8})
+    ui.infiniteZoomBtn.btn.MouseButton1Click:Connect(function()
+        setInfiniteZoom(not Settings.infiniteZoom)
+        pulseButton(ui.infiniteZoomBtn)
+        notify(Settings.infiniteZoom and "Infinite zoom on" or "Infinite zoom off",
+               Settings.infiniteZoom and Theme.accent or Theme.danger)
+    end)
+    makeDivider(viewFrame, 236, PAD)
+    local fkr2 = makeInfoRow(viewFrame, 248, "Freecam keybind",
+        tostring(Freecam.keybind):gsub("Enum.KeyCode.",""), PAD)
+    ui.freecamKeyValue = fkr2.value
+    ui.freecamKeyBtn = makeButton(viewFrame, {size=UDim2.new(1,-PAD*2,0,42), pos=UDim2.new(0,PAD,0,286),
+        text="CHANGE KEYBIND", textColor=Theme.text, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    makeDivider(viewFrame, 340, PAD)
+    makeLabel(viewFrame, {text="Spectator", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,352), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.specStatus = makeLabel(viewFrame, {text="Not spectating", size=13, color=Theme.textMute,
+        pos=UDim2.new(0,PAD,0,374), sizeUDim=UDim2.new(1,-PAD*2,0,18)})
+    ui.spectateZoomSlider = createSlider(viewFrame, {pos=UDim2.new(0,PAD,0,402), size=UDim2.new(1,-PAD*2,0,44),
+        label="Spectate Distance", initial=Settings.spectateZoom, min=5, max=60,
+        formatter=function(v) return v.." studs" end,
+        onChange=function(v) Settings.spectateZoom=v end})
+
+    -- TOOLS TAB
+    local toolsFrame = Instance.new("Frame")
+    toolsFrame.Name="TOOLS"; toolsFrame.Size=UDim2.new(1,0,1,0); toolsFrame.BackgroundTransparency=1
+    toolsFrame.Visible=false; toolsFrame.Parent=content
+    ui.tabFrames["TOOLS"] = toolsFrame
+    makeLabel(toolsFrame, {text="Teleport", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,14), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.clickTeleportBtn = makeButton(toolsFrame, {
+        size=UDim2.new(1,-PAD*2,0,42), pos=UDim2.new(0,PAD,0,36),
+        text="CLICK TELEPORT: OFF", textColor=Theme.textDim, textSize=14, font=Enum.Font.GothamBold, radius=8})
+    ui.clickTeleportBtn.btn.MouseButton1Click:Connect(function()
+        Settings.clickTeleport = not Settings.clickTeleport
+        pulseButton(ui.clickTeleportBtn)
+        notify(Settings.clickTeleport and "Click teleport on" or "Click teleport off",
+               Settings.clickTeleport and Theme.accent or Theme.danger)
+        updateUI(); updateTabIndicators()
+    end)
+    makeLabel(toolsFrame, {text="Press the input below to teleport to your cursor.", size=11,
+        color=Theme.textMute, pos=UDim2.new(0,PAD,0,88), sizeUDim=UDim2.new(1,-PAD*2,0,14)})
+    local ctRow = makeInfoRow(toolsFrame, 108, "Teleport input",
+        clickTeleportInputToString(Settings.clickTeleportInput), PAD)
+    ui.clickTeleportValue = ctRow.value
+    ui.clickTeleportInputBtn = makeButton(toolsFrame, {
+        size=UDim2.new(1,-PAD*2,0,36), pos=UDim2.new(0,PAD,0,146),
+        text="REBIND INPUT", textColor=Theme.text, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    makeDivider(toolsFrame, 196, PAD)
+    makeLabel(toolsFrame, {text="Position", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,208), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    local posRow = makeInfoRow(toolsFrame, 228, "Coordinates", "0, 0, 0", PAD, 190, 12)
+    ui.posValue = posRow.value
+    ui.copyPosBtn = makeButton(toolsFrame, {
+        size=UDim2.new(1,-PAD*2,0,36), pos=UDim2.new(0,PAD,0,270),
+        text="COPY POSITION", textColor=Theme.accent, textSize=12, font=Enum.Font.GothamBold, radius=8})
+    ui.copyPosBtn.btn.MouseButton1Click:Connect(function()
+        local c = player.Character
+        local r = c and c:FindFirstChild("HumanoidRootPart")
+        if r then
+            local text = string.format("%d, %d, %d",
+                math.floor(r.Position.X), math.floor(r.Position.Y), math.floor(r.Position.Z))
+            local ok = pcall(function() setclipboard(text) end)
+            if ok then notify("Copied: "..text, Theme.accent)
+            else notify("Clipboard not available", Theme.warn) end
+        end
+    end)
+
+    -- SERVER TAB
+    local serverFrame = Instance.new("Frame")
+    serverFrame.Name="SERVER"; serverFrame.Size=UDim2.new(1,0,1,0); serverFrame.BackgroundTransparency=1
+    serverFrame.Visible=false; serverFrame.Parent=content
+    ui.tabFrames["SERVER"] = serverFrame
+    makeLabel(serverFrame, {text="Current Server", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,12), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    local spr = makeInfoRow(serverFrame, 34, "Players", #Players:GetPlayers().." / "..Players.MaxPlayers, PAD, 90)
+    ui.serverPlayersValue = spr.value
+    local jobId = game.JobId ~= "" and (#game.JobId > 20 and game.JobId:sub(1,20).."…" or game.JobId) or "(studio)"
+    local sjr = makeInfoRow(serverFrame, 76, "Job ID", jobId, PAD, 190, 12)
+    ui.serverJobValue = sjr.value
+    local splr = makeInfoRow(serverFrame, 118, "Place ID", tostring(game.PlaceId), PAD, 110)
+    ui.serverPlaceValue = splr.value
+    makeDivider(serverFrame, 170, PAD)
+    makeLabel(serverFrame, {text="Performance", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,182), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    local spg = makeInfoRow(serverFrame, 204, "Average Ping", "-- ms", PAD, 100)
+    ui.serverPingValue = spg.value
+    local sfps = makeInfoRow(serverFrame, 246, "Average FPS", "--", PAD, 100)
+    ui.serverFpsValue = sfps.value
+    local sreg = makeInfoRow(serverFrame, 288, "Server Region", "--", PAD, 120)
+    ui.serverRegionValue = sreg.value
+    local sst = makeInfoRow(serverFrame, 330, "Time in Server", "--", PAD, 150)
+    ui.sessionTimeValue = sst.value
+    makeDivider(serverFrame, 382, PAD)
+    ui.hopBtn = makeButton(serverFrame, {size=UDim2.new(1,-PAD*2,0,52), pos=UDim2.new(0,PAD,0,400),
+        text="SERVER HOP", textColor=Theme.accent, textSize=16, font=Enum.Font.GothamBold, radius=10})
+    ui.hopBtn.btn.MouseButton1Click:Connect(function()
+        pulseButton(ui.hopBtn)
+        serverHop()
+    end)
+
+    -- SETTINGS TAB
+    local setFrame = Instance.new("Frame")
+    setFrame.Name="SETTINGS"; setFrame.Size=UDim2.new(1,0,1,0); setFrame.BackgroundTransparency=1
+    setFrame.Visible=false; setFrame.Parent=content
+    ui.tabFrames["SETTINGS"] = setFrame
+
+    makeLabel(setFrame, {text="Theme", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,8), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    local themeRow = Instance.new("Frame")
+    themeRow.Size = UDim2.new(1,-PAD*2,0,52); themeRow.Position = UDim2.new(0,PAD,0,30)
+    themeRow.BackgroundTransparency = 1; themeRow.Parent = setFrame
+    local tLay = Instance.new("UIListLayout")
+    tLay.FillDirection = Enum.FillDirection.Horizontal
+    tLay.Padding = UDim.new(0, 6)
+    tLay.SortOrder = Enum.SortOrder.LayoutOrder
+    tLay.Parent = themeRow
+    ui.themeSwatches = {}
+    for _, n in ipairs(THEME_ORDER) do
+        local preset = THEME_PRESETS[n]
+
+        -- Black outline wrapper (thinner)
+        local wrapper = Instance.new("Frame")
+        wrapper.Name = "ThemeWrap_"..n
+        wrapper.Size = UDim2.new(0, 84, 0, 52)
+        wrapper.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        wrapper.BorderSizePixel = 0
+        wrapper.Parent = themeRow
+        local wc = Instance.new("UICorner"); wc.CornerRadius = UDim.new(0, 9); wc.Parent = wrapper
+
+        -- Inner swatch button (thinner black outline around it)
+        local b = Instance.new("TextButton")
+        b.Name = "Theme_"..n
+        b.Size = UDim2.new(1, -4, 1, -4)
+        b.Position = UDim2.new(0, 2, 0, 2)
+        b.BackgroundColor3 = preset.swatch
+        b.Text = ""
+        b.AutoButtonColor = false
+        b.BorderSizePixel = 0
+        b.Parent = wrapper
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 7); bc.Parent = b
+        local bs = Instance.new("UIStroke"); bs.Thickness = 2; bs.Color = Theme.border; bs.Parent = b
+
+        local bl = Instance.new("TextLabel")
+        bl.Size = UDim2.new(1,0,1,0); bl.BackgroundTransparency = 1
+        bl.Text = preset.label
+        bl.TextColor3 = preset.text
+        bl.TextSize = 11; bl.Font = Enum.Font.GothamBold
+        bl.TextWrapped = true; bl.Active = false
+        bl.Parent = b
+        if n == Settings.themeName then
+            bs.Color = Theme.accent
+            bs.Thickness = 3
+        end
+
+        local bps = Instance.new("UIScale"); bps.Scale = 1; bps.Parent = wrapper
+        b.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+               or i.UserInputType == Enum.UserInputType.Touch then
+                TweenService:Create(bps, TweenInfo.new(0.08), {Scale = 0.94}):Play()
+            end
+        end)
+        b.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+               or i.UserInputType == Enum.UserInputType.Touch then
+                TweenService:Create(bps, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+            end
+        end)
+        b.MouseButton1Click:Connect(function() applyTheme(n) end)
+        ui.themeSwatches[n] = { btn = b, stroke = bs, wrapper = wrapper }
+    end
+    makeDivider(setFrame, 98, PAD)
+
+    makeLabel(setFrame, {text="Notifications", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,112), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.notifBtn = makeButton(setFrame, {size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,134),
+        text="NOTIFS: ON", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.notifBtn.btn.MouseButton1Click:Connect(function()
+        Settings.notifications = not Settings.notifications
+        pulseButton(ui.notifBtn)
+        updateUI()
+    end)
+    ui.clockBtn = makeButton(setFrame, {size=UDim2.new(1,-PAD*2,0,34), pos=UDim2.new(0,PAD,0,176),
+        text="CLOCK: OFF", textColor=Theme.textDim, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.clockBtn.btn.MouseButton1Click:Connect(function()
+        Settings.clockEnabled = not Settings.clockEnabled
+        if ui.clockFrame then ui.clockFrame.Visible = Settings.clockEnabled end
+        pulseButton(ui.clockBtn)
+        updateUI()
+    end)
+
+    makeDivider(setFrame, 222, PAD)
+    makeLabel(setFrame, {text="UI Scale", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,234), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+    ui.scaleSlider = createSlider(setFrame, {
+        pos=UDim2.new(0,PAD,0,256), size=UDim2.new(1,-PAD*2,0,40),
+        label="Scale", initial=math.floor(Settings.uiScale*100), min=60, max=150,
+        formatter=function(v) return v.."%" end,
+        onChange=function(v)
+            Settings.uiScale = v/100
+            if ui.uiScale then ui.uiScale.Scale = Settings.uiScale end
+        end})
+
+    -- PERSISTENCE
+    makeDivider(setFrame, 308, PAD)
+    makeLabel(setFrame, {text="Persistence", size=12, color=Theme.textDim,
+        font=Enum.Font.GothamBold, pos=UDim2.new(0,PAD,0,320), sizeUDim=UDim2.new(1,-PAD*2,0,16)})
+
+    ui.saveBtn = makeButton(setFrame, {
+        size=UDim2.new(0.48,-PAD,0,40), pos=UDim2.new(0,PAD,0,344),
+        text="SAVE SETTINGS", textColor=Theme.accent, textSize=13, font=Enum.Font.GothamBold, radius=8})
+    ui.resetBtn = makeButton(setFrame, {
+        size=UDim2.new(0.48,-PAD,0,40), pos=UDim2.new(0.52,PAD,0,344),
+        text="RESET TO DEFAULT", textColor=Theme.danger, textSize=11, font=Enum.Font.GothamBold, radius=8})
+
+    ui.saveStatus = makeLabel(setFrame, {text=Save.status, size=11, color=Theme.textMute,
+        pos=UDim2.new(0,PAD,0,392), sizeUDim=UDim2.new(1,-PAD*2,0,14)})
+    makeLabel(setFrame, {text="Saved to: "..SAVE_FILE, size=10, color=Theme.textMute,
+        pos=UDim2.new(0,PAD,0,408), sizeUDim=UDim2.new(1,-PAD*2,0,14)})
+
+    ui.saveBtn.btn.MouseButton1Click:Connect(function()
+        pulseButton(ui.saveBtn)
+        doSave()
+        if ui.saveStatus then ui.saveStatus.Text = Save.status end
+    end)
+    ui.resetBtn.btn.MouseButton1Click:Connect(function()
+        pulseButton(ui.resetBtn)
+        resetToDefaults()
+    end)
+
+    switchTab("FLY")
+    updateUI()
+    updateTabIndicators()
+
+    return sg
+end
+
+-- ============ REFRESH UI AFTER LOAD / RESET ============
+function refreshUIAfterLoad()
+    -- Sliders
+    if ui.flySlider then ui.flySlider.setValueSilent(Settings.flySpeed) end
+    if ui.fcSlider then ui.fcSlider.setValueSilent(Freecam.speed) end
+    if ui.walkSpeedSlider then ui.walkSpeedSlider.setValueSilent(Settings.walkSpeed) end
+    if ui.jumpPowerSlider then ui.jumpPowerSlider.setValueSilent(Settings.jumpPower) end
+    if ui.espScaleSlider then ui.espScaleSlider.setValueSilent(math.floor(Settings.espScale*100)) end
+    if ui.scaleSlider then ui.scaleSlider.setValueSilent(math.floor(Settings.uiScale*100)) end
+    if ui.spectateZoomSlider then ui.spectateZoomSlider.setValueSilent(Settings.spectateZoom) end
+
+    -- Keybind labels
+    if ui.flyKeyValue then ui.flyKeyValue.Text = tostring(Settings.toggleKey):gsub("Enum.KeyCode.","") end
+    if ui.freecamKeyValue then ui.freecamKeyValue.Text = tostring(Freecam.keybind):gsub("Enum.KeyCode.","") end
+    if ui.walkSpeedKeyValue then ui.walkSpeedKeyValue.Text = tostring(Settings.walkSpeedKey):gsub("Enum.KeyCode.","") end
+    if ui.noclipKeyValue then ui.noclipKeyValue.Text = tostring(Settings.noclipKey):gsub("Enum.KeyCode.","") end
+    if ui.potatoKeyValue then ui.potatoKeyValue.Text = tostring(Settings.potatoKey):gsub("Enum.KeyCode.","") end
+    if ui.clickTeleportValue then ui.clickTeleportValue.Text = clickTeleportInputToString(Settings.clickTeleportInput) end
+
+    -- UI scale
+    if ui.uiScale then ui.uiScale.Scale = Settings.uiScale end
+
+    -- Clock
+    if ui.clockFrame then ui.clockFrame.Visible = Settings.clockEnabled end
+
+    -- Theme
+    applyTheme(Settings.themeName)
+
+    -- ESP color
+    setESPColor(ESP.colorName)
+
+    -- Restore ESP selections for existing players
+    applyPendingESPSelections()
+
+    -- Rebuild ESP entries if running
+    if ESP.enabled then
+        for plr, _ in pairs(ESP.entries) do removeESPForPlayer(plr) end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= player and ESP.selected[plr] then createESPForPlayer(plr) end
+        end
+    end
+
+    -- Runtime states
+    if Settings.walkSpeedEnabled then applyWalkSpeed() end
+    if Settings.jumpPowerEnabled then applyJumpPower() end
+    if Settings.noclip then
+        local c = player.Character
+        if c then noclipApplyToCharacter(c); noclipHookCharacter(c) end
+    end
+    if Settings.fullbright and not Fullbright.original then applyFullbright(true) end
+    if not Settings.fullbright and Fullbright.original then applyFullbright(false) end
+    if Settings.infiniteZoom and not InfiniteZoom.originalMax then setInfiniteZoom(true) end
+    if not Settings.infiniteZoom and InfiniteZoom.originalMax then setInfiniteZoom(false) end
+    if Settings.potato and not Potato.active then setPotato(true) end
+    if not Settings.potato and Potato.active then setPotato(false) end
+
+    rebuildPlayerList()
+    updateUI()
+    updateTabIndicators()
+end
+
+-- ============ RESET TO DEFAULTS ============
+function resetToDefaults()
+    -- 1) Shut down all runtime features safely first
+    if Settings.flying then pcall(stopFly) end
+    if Freecam.active then pcall(stopFreecam) end
+    if Spectate.active then pcall(stopSpectate) end
+    if ESP.enabled then pcall(disableESP) end
+    if Settings.noclip then pcall(setNoclip, false) end
+    if Settings.potato then pcall(setPotato, false) end
+    if Settings.infiniteZoom then pcall(setInfiniteZoom, false) end
+    if Settings.fullbright then pcall(applyFullbright, false) end
+    if Settings.walkSpeedEnabled then pcall(setWalkSpeedEnabled, false) end
+    if Settings.jumpPowerEnabled then pcall(setJumpPowerEnabled, false) end
+
+    -- 2) Restore every setting to factory default
+    Settings.flySpeed = DEFAULTS.flySpeed
+    Settings.toggleKey = DEFAULTS.toggleKey
+    Settings.uiKey = DEFAULTS.uiKey
+    Settings.uiScale = DEFAULTS.uiScale
+    Settings.notifications = DEFAULTS.notifications
+    Settings.spectateZoom = DEFAULTS.spectateZoom
+    Settings.tracers = DEFAULTS.tracers
+    Settings.clockEnabled = DEFAULTS.clockEnabled
+    Settings.walkSpeed = DEFAULTS.walkSpeed
+    Settings.walkSpeedEnabled = DEFAULTS.walkSpeedEnabled
+    Settings.walkSpeedKey = DEFAULTS.walkSpeedKey
+    Settings.jumpPower = DEFAULTS.jumpPower
+    Settings.jumpPowerEnabled = DEFAULTS.jumpPowerEnabled
+    Settings.infiniteJump = DEFAULTS.infiniteJump
+    Settings.noclip = DEFAULTS.noclip
+    Settings.noclipKey = DEFAULTS.noclipKey
+    Settings.potato = DEFAULTS.potato
+    Settings.potatoKey = DEFAULTS.potatoKey
+    Settings.infiniteZoom = DEFAULTS.infiniteZoom
+    Settings.espScale = DEFAULTS.espScale
+    Settings.espNames = DEFAULTS.espNames
+    Settings.clickTeleport = DEFAULTS.clickTeleport
+    Settings.clickTeleportInput = DEFAULTS.clickTeleportInput
+    Settings.themeName = DEFAULTS.themeName
+    Settings.fullbright = DEFAULTS.fullbright
+    Settings.pendingESPUserIds = {}
+    Freecam.speed = DEFAULTS.freecamSpeed
+    Freecam.keybind = DEFAULTS.freecamKeybind
+    ESP.colorName = DEFAULTS.espColorName
+    local p = COLOR_PRESETS[DEFAULTS.espColorName]
+    if p then ESPColor.fill = p.fill; ESPColor.outline = p.outline; ESPColor.dist = p.dist end
+    ESP.selected = {}
+
+    -- 3) Refresh UI + runtime
+    refreshUIAfterLoad()
+
+    -- 4) Delete save file (if possible) so next launch is default too
+    if hasFileIO() then
+        if type(delfile) == "function" then
+            pcall(function()
+                if isfile(SAVE_FILE) then delfile(SAVE_FILE) end
+            end)
+            Save.status = "Defaults restored (save cleared)"
+        else
+            -- Can't delete; overwrite with defaults instead
+            doSave()
+            Save.status = "Defaults restored (save overwritten)"
+        end
+    else
+        Save.status = "Defaults restored (in memory only)"
+    end
+
+    if ui.saveStatus then ui.saveStatus.Text = Save.status end
+    notify("Settings reset to defaults", Theme.warn)
+end
+
+-- ============ TOGGLE UI ============
+local function setGuiOpen(open)
+    Settings.guiOpen = open
+    if not guiFrame then return end
+    if open then
+        guiFrame.Visible = true
+        rebuildPlayerList()
+        switchTab(currentTab)
+        local baseScale = Settings.uiScale
+        ui.uiScale.Scale = baseScale * 0.85
+        TweenService:Create(ui.uiScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Scale = baseScale}):Play()
+    else
+        local baseScale = Settings.uiScale
+        local t = TweenService:Create(ui.uiScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {Scale = baseScale * 0.9})
+        t:Play()
+        t.Completed:Connect(function()
+            guiFrame.Visible = false
+            ui.uiScale.Scale = baseScale
+        end)
+    end
+end
+
+-- ============ KEYBIND REBIND ============
+local function promptRebind(target, btnObj, infoValue)
+    if rebindingAny then return end
+    rebindingAny = true
+    if btnObj and btnObj.label then
+        btnObj.label.Text = "PRESS A KEY..."
+        btnObj.label.TextColor3 = Theme.warn
+    end
+    if infoValue then infoValue.Text = "..." end
+    notify("Press a key to bind...", Theme.warn)
+
+    local done = false
+    local conn
+    local function finish()
+        if done then return end
+        done = true
+        rebindingAny = false
+        if btnObj and btnObj.label then
+            btnObj.label.Text = "CHANGE KEYBIND"
+            if btnObj.btn:GetAttribute("ToggledOn") then
+                btnObj.label.TextColor3 = Color3.fromRGB(255,255,255)
+            else
+                btnObj.label.TextColor3 = Theme.text
+            end
+        end
+        if conn then conn:Disconnect() end
+    end
+
+    conn = UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        local key = input.KeyCode
+        if key == Enum.KeyCode.Unknown then return end
+        if keyConflicts(key, target) then
+            notify("Key already in use", Theme.danger)
+            if infoValue then infoValue.Text = "Conflict" end
+        else
+            local keyName = tostring(key):gsub("Enum.KeyCode.","")
+            if target == "ui" then
+                Settings.uiKey = key
+            elseif target == "fly" then
+                Settings.toggleKey = key
+                if infoValue then infoValue.Text = keyName end
+            elseif target == "fc" then
+                Freecam.keybind = key
+                if infoValue then infoValue.Text = keyName end
+            elseif target == "ws" then
+                Settings.walkSpeedKey = key
+                if infoValue then infoValue.Text = keyName end
+            elseif target == "nc" then
+                Settings.noclipKey = key
+                if infoValue then infoValue.Text = keyName end
+            elseif target == "pt" then
+                Settings.potatoKey = key
+                if infoValue then infoValue.Text = keyName end
+            end
+            notify("Bound to "..keyName, Theme.accent)
+        end
+        finish()
+    end)
+end
+
+local function promptRebindInput()
+    if rebindingAny then return end
+    rebindingAny = true
+    if ui.clickTeleportInputBtn and ui.clickTeleportInputBtn.label then
+        ui.clickTeleportInputBtn.label.Text = "PRESS A BUTTON..."
+        ui.clickTeleportInputBtn.label.TextColor3 = Theme.warn
+    end
+    if ui.clickTeleportValue then ui.clickTeleportValue.Text = "..." end
+    notify("Press a mouse button to bind...", Theme.warn)
+
+    local done = false
+    local conn
+    local function finish()
+        if done then return end
+        done = true
+        rebindingAny = false
+        if ui.clickTeleportInputBtn and ui.clickTeleportInputBtn.label then
+            ui.clickTeleportInputBtn.label.Text = "REBIND INPUT"
+            ui.clickTeleportInputBtn.label.TextColor3 = Theme.text
+        end
+        if conn then conn:Disconnect() end
+    end
+
+    conn = UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+           and input.UserInputType ~= Enum.UserInputType.MouseButton2
+           and input.UserInputType ~= Enum.UserInputType.MouseButton3 then return end
+        Settings.clickTeleportInput = input.UserInputType
+        if ui.clickTeleportValue then
+            ui.clickTeleportValue.Text = clickTeleportInputToString(input.UserInputType)
+        end
+        notify("Bound to "..clickTeleportInputToString(input.UserInputType), Theme.accent)
+        finish()
+    end)
+end
+
+-- ============ BOOT ============
+-- 1) Load saved settings before building UI so defaults pick them up
+local loadedFromFile = doLoad(true)
+
+-- 2) Build the UI
+createUI()
+
+-- 3) Post-load UI/runtime sync
+if loadedFromFile then
+    task.defer(function()
+        refreshUIAfterLoad()
+        if ui.saveStatus then ui.saveStatus.Text = Save.status end
+    end)
+end
+
+-- 4) Wire keybind rebind buttons
+ui.flyKeyBtn.btn.MouseButton1Click:Connect(function() promptRebind("fly", ui.flyKeyBtn, ui.flyKeyValue) end)
+ui.freecamKeyBtn.btn.MouseButton1Click:Connect(function() promptRebind("fc", ui.freecamKeyBtn, ui.freecamKeyValue) end)
+ui.walkSpeedKeyBtn.btn.MouseButton1Click:Connect(function() promptRebind("ws", ui.walkSpeedKeyBtn, ui.walkSpeedKeyValue) end)
+ui.noclipKeyBtn.btn.MouseButton1Click:Connect(function() promptRebind("nc", ui.noclipKeyBtn, ui.noclipKeyValue) end)
+ui.potatoKeyBtn.btn.MouseButton1Click:Connect(function() promptRebind("pt", ui.potatoKeyBtn, ui.potatoKeyValue) end)
+ui.clickTeleportInputBtn.btn.MouseButton1Click:Connect(function() promptRebindInput() end)
+
+-- 5) Global hotkeys
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if rebindingAny then return end
+    if isTyping() then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Settings.uiKey then
+            setGuiOpen(not Settings.guiOpen)
+        elseif input.KeyCode == Settings.toggleKey then
+            if Settings.flying then stopFly() else startFly() end
+        elseif input.KeyCode == Freecam.keybind then
+            if Freecam.active then stopFreecam() else startFreecam() end
+        elseif input.KeyCode == Settings.walkSpeedKey then
+            setWalkSpeedEnabled(not Settings.walkSpeedEnabled)
+        elseif input.KeyCode == Settings.noclipKey then
+            setNoclip(not Settings.noclip)
+        elseif input.KeyCode == Settings.potatoKey then
+            setPotato(not Settings.potato)
+            notify(Settings.potato and "Potato graphics on" or "Potato graphics off",
+                   Settings.potato and Theme.accent or Theme.danger)
+        end
+    end
+    if Settings.clickTeleport and isClickTeleportInput(input) and not Settings.guiOpen then
+        doTeleportFromMouse()
+    end
+end)
+
+-- 6) Restore pending ESP selections on late-joining players
+Players.PlayerAdded:Connect(function(plr)
+    if Settings.pendingESPUserIds and Settings.pendingESPUserIds[tostring(plr.UserId)] then
+        ESP.selected[plr] = true
+        if ESP.enabled then
+            task.wait(0.2)
+            createESPForPlayer(plr)
+        end
+    end
+end)
+
+-- 7) Respawn cleanup
+player.CharacterAdded:Connect(function(newChar)
+    if Settings.flying then pcall(stopFly) end
+    if Spectate.active then pcall(stopSpectate) end
+
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    rootPart = newChar:WaitForChild("HumanoidRootPart")
+    task.wait(0.3)
+    if Settings.walkSpeedEnabled then applyWalkSpeed() end
+    if Settings.jumpPowerEnabled then applyJumpPower() end
+    if Settings.noclip then
+        noclipApplyToCharacter(newChar)
+        noclipHookCharacter(newChar)
+    end
+end)
+
+notify("FlyHacks loaded — press H", Theme.accent)
